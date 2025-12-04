@@ -2,7 +2,7 @@
 
 
 #include "LIB/stdtypes.h"
-#include "linkerScriptTest/SectionAdd_ld.h"
+#include "test.h"
 
 // Non volatile so it will be 10 
 volatile uint32_t __attribute__((section(".led_cfg_flash_section")))  LED_CFG_Flash =10;
