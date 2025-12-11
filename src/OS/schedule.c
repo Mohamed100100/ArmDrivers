@@ -312,11 +312,16 @@ static void localExecuteRunnables(){
                  * Note: This implementation has a bug - it doesn't account for FirstDelay_ms
                  * All runnables start executing immediately from tick 0
                  */
-                if(0 == (tickCounters%savedRunnbles[index]->Periodicity_ms)){
-                    /* Execute the runnable's callback function with its arguments */
-                    savedRunnbles[index]->CBF(savedRunnbles[index]->Args);
+                if(tickCounters >= savedRunnbles[index]->FirstDalay_ms){
+
+                    if(0 == ((tickCounters-savedRunnbles[index]->FirstDalay_ms)%savedRunnbles[index]->Periodicity_ms)){
+                        /* Execute the runnable's callback function with its arguments */
+                        savedRunnbles[index]->CBF(savedRunnbles[index]->Args);
+                    }else{
+                        /* Not yet time to execute this runnable - skip to next */
+                    }
                 }else{
-                    /* Not yet time to execute this runnable - skip to next */
+                    // not yet the first delay
                 }
             }else{
                 /* Runnable structure exists but callback is NULL - skip */
