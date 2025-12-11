@@ -47,7 +47,7 @@ LED_Status_t LED_vdInit(){
 LED_Status_t LED_vdTurnON(LED_Name_t ledName){
 
     LED_Status_t status = LED_NOT_OK;
-    if(ledName > LED_LEN){
+    if(ledName >= LED_LEN){
         status = LED_WRONG_LED_NAME;
     }else{
         status = (LED_Status_t)GPIO_enuSetPinVal(LedConfigArr[ledName].port,
@@ -60,7 +60,7 @@ LED_Status_t LED_vdTurnON(LED_Name_t ledName){
 LED_Status_t LED_vdTurnOFF(LED_Name_t ledName){
 
     LED_Status_t status = LED_NOT_OK;
-    if(ledName > LED_LEN){
+    if(ledName >= LED_LEN){
         status = LED_WRONG_LED_NAME;
     }else{
         status = (LED_Status_t) GPIO_enuSetPinVal(LedConfigArr[ledName].port,
@@ -73,7 +73,7 @@ LED_Status_t LED_vdTurnOFF(LED_Name_t ledName){
 LED_Status_t LED_vdToggle(LED_Name_t ledName){
     
     LED_Status_t status = LED_NOT_OK;
-    if(ledName > LED_LEN){
+    if(ledName >= LED_LEN){
         status = LED_WRONG_LED_NAME;
     }else{
         status = (LED_Status_t) GPIO_enuFlipPinVal(LedConfigArr[ledName].port,
