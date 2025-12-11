@@ -187,7 +187,7 @@ static SWITCH_Status_t SWITCH_enuLocalReadVAl(SWITCH_Name_t switchName,SWITCH_St
         status = SWITCH_NULL_PTR;
     }else{
         /* Validate switch name is within valid range */
-        if(SWITCH_LEN < switchName){
+        if(SWITCH_LEN <= switchName){
             status = SWITCH_WRONG_NAME;
         }else{
 
@@ -380,7 +380,7 @@ SWITCH_Status_t SWITCH_enuReadVAl(SWITCH_Name_t switchName,SWITCH_State_t* retSt
     }else{
         
         /* Validate switch name is within valid range */
-        if(SWITCH_LEN < switchName){
+        if(SWITCH_LEN <= switchName){
             status = SWITCH_WRONG_NAME;
         }else{
             /* Return the cached debounced state from SwitchState array */
