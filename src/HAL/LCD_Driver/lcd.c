@@ -186,6 +186,7 @@ static LCD_Asyn_States_t lcdState = LCD_NO_ACTION;
 static LCD_InitSeq_t initSeq = INIT_DONE;
 static LCD_WriteStringSeq_t writeStringSeq = WRITE_STRING_DONE;
 LCD_CreateCustomCharSeq_t createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+static LCD_Callback_t Lcd_Callback = NULL;
 
 
 /**
@@ -321,7 +322,19 @@ static LCD_Status_t LCD_InitSequence_8BitMode(void)
         for(startSeqCount = 0; startSeqCount < 3; startSeqCount++){
             /* Set RS=0 for command, RW=0 for write */
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_LOW);
+            if(GPIO_OK != gpioStatus){
+                retStatus = LCD_GPIO_ERROR;
+                break;
+            }else{
+                // Continue to next step
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);
+            if(GPIO_OK != gpioStatus){
+                retStatus = LCD_GPIO_ERROR;
+                break;
+            }else{
+                // Continue to next step
+            }
             
             /* Send 0x30 initialization command */
             retStatus = LCD_WriteByte(0x30 >> ALL_BITS);
@@ -349,12 +362,12 @@ static LCD_Status_t LCD_InitSequence_8BitMode(void)
             /* Step 1: Function Set - Configure interface, lines, and font */
             retStatus = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,ALL_BITS);
         if (LCD_OK != retStatus){
-            retStatus = retStatus;  /* Preserve error status */
+            // retStatus = retStatus;  /* Preserve error status */
         }else{
             // generate high >> low
             retStatus = LCD_GenerateEnablePulse();
             if (LCD_OK != retStatus){
-                retStatus = retStatus;  /* Preserve error status */
+                // retStatus = retStatus;  /* Preserve error status */
             }else{
                 systickStat = SYSTICK_Wait_ms(1);  /* Wait >4.1ms as per datasheet */
                 
@@ -365,12 +378,12 @@ static LCD_Status_t LCD_InitSequence_8BitMode(void)
                     retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,ALL_BITS);
                     
                     if (LCD_OK != retStatus){
-                        retStatus = retStatus;  /* Preserve error status */
+                        // retStatus = retStatus;  /* Preserve error status */
                     }else{
                         // generate high >> low
                         retStatus = LCD_GenerateEnablePulse();
                         if (LCD_OK != retStatus){
-                            retStatus = retStatus;  /* Preserve error status */
+                            // retStatus = retStatus;  /* Preserve error status */
                         }else{
                             systickStat = SYSTICK_Wait_ms(1);  /* Wait >100μs */
 
@@ -381,12 +394,12 @@ static LCD_Status_t LCD_InitSequence_8BitMode(void)
                                 retStatus = ClearDisplay(ALL_BITS);  /* Clear display command */
                                 
                                 if (LCD_OK != retStatus){
-                                    retStatus = retStatus;  /* Preserve error status */
+                                    // retStatus = retStatus;  /* Preserve error status */ 
                                 }else{
                                     // generate high >> low
                                     retStatus = LCD_GenerateEnablePulse();
                                     if (LCD_OK != retStatus){
-                                        retStatus = retStatus;  /* Preserve error status */
+                                        // retStatus = retStatus;  /* Preserve error status */
                                     }else{
                                         systickStat = SYSTICK_Wait_ms(2);  /* Wait for clear (1.64ms typical) */
 
@@ -398,7 +411,7 @@ static LCD_Status_t LCD_InitSequence_8BitMode(void)
                                             // generate high >> low
                                             retStatus = LCD_GenerateEnablePulse();
                                             if (LCD_OK != retStatus){
-                                                retStatus = retStatus;  /* Preserve error status */
+                                                // retStatus = retStatus;  /* Preserve error status */
                                             }else{
                                                 retStatus = LCD_OK;
                                             }
@@ -1586,14 +1599,6 @@ LCD_Status_t LCD_enuAsynInit(){
 
     LCD_Status_t retStatus = LCD_NOT_OK;
     
-    /* Reset all static variables to ensure clean state */
-    // NumberOfFunctionSetCalls = 0;
-    // startSeq = 0;
-    // iterator = 0;
-    // customCharIterator = 0;
-    LCD_CurrentRow = 0;
-    LCD_CurrentCol = 0;
-    
     retStatus = LCD_enuInitGpioPins();
     if(LCD_OK!=retStatus){
         retStatus = LCD_FAILED_TO_INIT;
@@ -1736,22 +1741,44 @@ void static lcdRunnableCBF(){
 
 }
 
-static uint8_t NumberOfFunctionSetCalls =0;
 static uint8_t startSeq = 0;
 
 void static ExecuteInitSeq(){
     GPIO_Status_t gpioStatus;
     LCD_Status_t retStatus;
+    
     switch(initSeq){
         case INIT_8BIT_START_SEQUANCE_HIGH :
-            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_LOW);  /* RS=0 for command */
-            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);   /* RW=0 for write */
-            retStatus  = LCD_WriteByte(0x30>>ALL_BITS); /* Send 0x30 to initialize */
+            retStatus = LCD_WriteCommand(0x30>>ALL_BITS); /* Send 0x30 to initialize */
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_8BIT_START_SEQUANCE_LOW;
             break;
         case INIT_8BIT_START_SEQUANCE_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             startSeq++;
             if(startSeq < 3){
                 initSeq    = INIT_8BIT_START_SEQUANCE_HIGH;
@@ -1763,58 +1790,180 @@ void static ExecuteInitSeq(){
 
         case INIT_8BIT_FUNCTION_SET_HIGH :
             retStatus   = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,ALL_BITS);
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_8BIT_FUNCTION_SET_LOW;
             break;
 
         case INIT_8BIT_FUNCTION_SET_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq    = INIT_8BIT_DISPLAY_ON_HIGH;
             break;
 
         case INIT_8BIT_DISPLAY_ON_HIGH: 
             retStatus   = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,ALL_BITS);
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_8BIT_DISPLAY_ON_LOW;
             break;
 
         case INIT_8BIT_DISPLAY_ON_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq    = INIT_8BIT_CLEAR_DISPLAY_HIGH;
             break;
 
         case INIT_8BIT_CLEAR_DISPLAY_HIGH : 
             retStatus   = ClearDisplay( ALL_BITS);
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_8BIT_CLEAR_DISPLAY_LOW;
             break;
 
         case INIT_8BIT_CLEAR_DISPLAY_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq    = INIT_8BIT_ENTRY_MODE_HIGH;
             break;
 
         case INIT_8BIT_ENTRY_MODE_HIGH : 
             retStatus   = EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus,ALL_BITS);
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_8BIT_ENTRY_MODE_LOW;
             break;
 
         case INIT_8BIT_ENTRY_MODE_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq    = INIT_DONE;
             lcdState   = LCD_NO_ACTION;
+            /* Notify user that initialization completed successfully */
+            if(Lcd_Callback != NULL){
+                Lcd_Callback(LCD_OK);
+            }
             break;
 
         case INIT_4BIT_HIGH_NIBBLE_START_SEQUANCE_HIGH :
-            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_LOW);  /* RS=0 for command */
-            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);   /* RW=0 for write */
-            retStatus  = LCD_WriteByte(0x30>>HIGH_NIBBLE);
+            retStatus = LCD_WriteCommand(0x30>>HIGH_NIBBLE); /* Send 0x30 to initialize */
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_4BIT_HIGH_NIBBLE_START_SEQUANCE_LOW;
             break;
         case INIT_4BIT_HIGH_NIBBLE_START_SEQUANCE_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             startSeq++;
             if(startSeq < 3){
                 initSeq    = INIT_4BIT_HIGH_NIBBLE_START_SEQUANCE_HIGH;
@@ -1824,88 +1973,306 @@ void static ExecuteInitSeq(){
             }
             break;
         case INIT_4BIT_SWITCH_TO_4BIT_MODE_HIGH :
-            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_LOW);  /* RS=0 for command */
-            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);   /* RW=0 for write */
-            retStatus   = LCD_WriteByte(0x20>>HIGH_NIBBLE); /* Send 0x20 to switch to 4-bit mode */
+            retStatus = LCD_WriteCommand(0x20>>HIGH_NIBBLE); /* Send 0x30 to initialize */
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_4BIT_SWITCH_TO_4BIT_MODE_LOW;
             break;
         case INIT_4BIT_SWITCH_TO_4BIT_MODE_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq    = INIT_4BIT_HIGH_NIBBLE_FUNCTION_SET_HIGH;
             break;
         case INIT_4BIT_HIGH_NIBBLE_FUNCTION_SET_HIGH :
             retStatus   = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,HIGH_NIBBLE);
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_4BIT_HIGH_NIBBLE_FUNCTION_SET_LOW;
             break;
         case INIT_4BIT_HIGH_NIBBLE_FUNCTION_SET_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq    = INIT_4BIT_LOW_NIBBLE_FUNCTION_SET_HIGH;
             break;  
         case INIT_4BIT_LOW_NIBBLE_FUNCTION_SET_HIGH :
             retStatus   = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,LOW_NIBBLE);
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_4BIT_LOW_NIBBLE_FUNCTION_SET_LOW;
             break;
         case INIT_4BIT_LOW_NIBBLE_FUNCTION_SET_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq    = INIT_4BIT_HIGH_NIBBLE_DISPLAY_ON_HIGH;
             break;
         case INIT_4BIT_HIGH_NIBBLE_DISPLAY_ON_HIGH: 
             retStatus   = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,HIGH_NIBBLE);
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_4BIT_HIGH_NIBBLE_DISPLAY_ON_LOW;
             break;
         case INIT_4BIT_HIGH_NIBBLE_DISPLAY_ON_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq    = INIT_4BIT_LOW_NIBBLE_DISPLAY_ON_HIGH;
             break;  
         case INIT_4BIT_LOW_NIBBLE_DISPLAY_ON_HIGH: 
             retStatus   = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,LOW_NIBBLE);
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_4BIT_LOW_NIBBLE_DISPLAY_ON_LOW;
             break;
         case INIT_4BIT_LOW_NIBBLE_DISPLAY_ON_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq    = INIT_4BIT_HIGH_NIBBLE_CLEAR_DISPLAY_HIGH;
             break;  
         case INIT_4BIT_HIGH_NIBBLE_CLEAR_DISPLAY_HIGH : 
             retStatus   = ClearDisplay(HIGH_NIBBLE);
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_4BIT_HIGH_NIBBLE_CLEAR_DISPLAY_LOW;
             break;
         case INIT_4BIT_HIGH_NIBBLE_CLEAR_DISPLAY_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq    = INIT_4BIT_LOW_NIBBLE_CLEAR_DISPLAY_HIGH;
             break;  
         case INIT_4BIT_LOW_NIBBLE_CLEAR_DISPLAY_HIGH : 
             retStatus   = ClearDisplay(LOW_NIBBLE);
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_4BIT_LOW_NIBBLE_CLEAR_DISPLAY_LOW;
             break;
         case INIT_4BIT_LOW_NIBBLE_CLEAR_DISPLAY_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq    = INIT_4BIT_HIGH_NIBBLE_ENTRY_MODE_HIGH;
             break;  
         case INIT_4BIT_HIGH_NIBBLE_ENTRY_MODE_HIGH : 
             retStatus   = EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus,HIGH_NIBBLE);
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_4BIT_HIGH_NIBBLE_ENTRY_MODE_LOW;
             break;
         case INIT_4BIT_HIGH_NIBBLE_ENTRY_MODE_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq    = INIT_4BIT_LOW_NIBBLE_ENTRY_MODE_HIGH;
             break;  
         case INIT_4BIT_LOW_NIBBLE_ENTRY_MODE_HIGH : 
             retStatus   = EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus,LOW_NIBBLE);
+            if(retStatus != LCD_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retStatus);
+                }
+                break;
+            }
             gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq     = INIT_4BIT_LOW_NIBBLE_ENTRY_MODE_LOW;
             break;
         case INIT_4BIT_LOW_NIBBLE_ENTRY_MODE_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                initSeq = INIT_FAILED;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             initSeq    = INIT_DONE;
             lcdState   = LCD_NO_ACTION;
+            /* Notify user that initialization completed successfully */
+            if(Lcd_Callback != NULL){
+                Lcd_Callback(LCD_INIT_SUCEESSFULLY);
+            }
             break;
         case INIT_DONE :
             /* Do nothing, initialization complete */
@@ -1922,17 +2289,45 @@ void static ExecuteWriteString(){
     switch(writeStringSeq){
         case WRITE_STRING_8BIT_CURSOR_HIGH : 
             retstat    = LCD_SetCursor_Local(PointerToBufferTop->row,PointerToBufferTop->col,ALL_BITS);
+            if(retstat != LCD_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retstat);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             writeStringSeq = WRITE_STRING_8BIT_CURSOR_LOW;
             break;
 
         case WRITE_STRING_8BIT_CURSOR_LOW : 
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             if('\0' == PointerToBufferTop->buff[iterator]){
                 Queue_Pop();
                 if(Queue_IsEmpty() == true){
                     writeStringSeq = WRITE_STRING_DONE;
                     lcdState = LCD_NO_ACTION;
+                    /* Notify user that string write completed successfully */
+                    if(Lcd_Callback != NULL){
+                        Lcd_Callback(LCD_OK);
+                    }
                 }else{
                     writeStringSeq = WRITE_STRING_8BIT_CURSOR_HIGH;
                     lcdState = LCD_WRITE_STRING;
@@ -1944,14 +2339,54 @@ void static ExecuteWriteString(){
             break;
         case WRITE_STRING_8_BIT_HIGH :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_HIGH);  /* RS=1 for data */
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);   /* RW=0 for write */
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             retstat    = LCD_WriteByte(PointerToBufferTop->buff[iterator++]);
+            if(retstat != LCD_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retstat);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             writeStringSeq = WRITE_STRING_8_BIT_LOW;
             break;
 
         case WRITE_STRING_8_BIT_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             LCD_CurrentCol++;
                 
             /* Handle line wrap for 16-column LCD */
@@ -1975,6 +2410,10 @@ void static ExecuteWriteString(){
                     if(Queue_IsEmpty() == true){
                         writeStringSeq = WRITE_STRING_DONE;
                         lcdState = LCD_NO_ACTION;
+                        /* Notify user that string write completed successfully */
+                        if(Lcd_Callback != NULL){
+                            Lcd_Callback(LCD_OK);
+                        }
                     }else{
                         writeStringSeq = WRITE_STRING_8BIT_CURSOR_HIGH;
                         lcdState = LCD_WRITE_STRING;
@@ -1988,25 +2427,77 @@ void static ExecuteWriteString(){
 
         case WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_HIGH:
             retstat    = LCD_SetCursor_Local(PointerToBufferTop->row,PointerToBufferTop->col,HIGH_NIBBLE);
+            if(retstat != LCD_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retstat);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             writeStringSeq = WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_LOW;
             break;
         case WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_LOW:
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             writeStringSeq = WRITE_STRING_4BIT_LOW_NIBBLE_CURSOR_HIGH;
             break;
         case WRITE_STRING_4BIT_LOW_NIBBLE_CURSOR_HIGH:
             retstat    = LCD_SetCursor_Local(PointerToBufferTop->row,PointerToBufferTop->col,LOW_NIBBLE);
+            if(retstat != LCD_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retstat);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             writeStringSeq = WRITE_STRING_4BIT_LOW_NIBBLE_CURSOR_LOW;
             break;
         case WRITE_STRING_4BIT_LOW_NIBBLE_CURSOR_LOW:
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             if('\0' == PointerToBufferTop->buff[iterator]){
                 Queue_Pop();
                 if(Queue_IsEmpty() == true){
                     writeStringSeq = WRITE_STRING_DONE;
                     lcdState = LCD_NO_ACTION;
+                    /* Notify user that string write completed successfully */
+                    if(Lcd_Callback != NULL){
+                        Lcd_Callback(LCD_OK);
+                    }
                 }else{
                     writeStringSeq = WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_HIGH;
                     lcdState = LCD_WRITE_STRING;
@@ -2019,22 +2510,86 @@ void static ExecuteWriteString(){
 
         case WRITE_STRING_4_BIT_HIGH_NIBBLE_HIGH :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_HIGH);  /* RS=1 for data */
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);   /* RW=0 for write */
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             retstat    = LCD_WriteByte(PointerToBufferTop->buff[iterator] >> HIGH_NIBBLE);
+            if(retstat != LCD_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retstat);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             writeStringSeq = WRITE_STRING_4_BIT_HIGH_NIBBLE_LOW;
             break;
         case WRITE_STRING_4_BIT_HIGH_NIBBLE_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             writeStringSeq = WRITE_STRING_4_BIT_LOW_NIBBLE_HIGH;
             break;  
         case WRITE_STRING_4_BIT_LOW_NIBBLE_HIGH :
             retstat    = LCD_WriteByte(PointerToBufferTop->buff[iterator++] >> LOW_NIBBLE);
+            if(retstat != LCD_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retstat);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             writeStringSeq = WRITE_STRING_4_BIT_LOW_NIBBLE_LOW;
             break;
         case WRITE_STRING_4_BIT_LOW_NIBBLE_LOW :
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                writeStringSeq = WRITE_STRING_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             LCD_CurrentCol++;
             /* Handle line wrap for 16-column LCD */
             if (LCD_CurrentCol >= COLUMN_LENGTH){
@@ -2055,6 +2610,10 @@ void static ExecuteWriteString(){
                     if(Queue_IsEmpty() == true){
                         writeStringSeq = WRITE_STRING_DONE;
                         lcdState = LCD_NO_ACTION;
+                        /* Notify user that string write completed successfully */
+                        if(Lcd_Callback != NULL){
+                            Lcd_Callback(LCD_WRITE_SUCCESSFULLY);
+                        }
                     }else{
                         writeStringSeq = WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_HIGH;
                         lcdState = LCD_WRITE_STRING;
@@ -2184,20 +2743,20 @@ static LCD_Status_t LCD_InitSequence_4BitMode(void)
                         /* Send high nibble first */
                         retStatus = FunctionSet(LcdCong.BitOperation, LcdCong.LineDisplay, LcdCong.FontSize, HIGH_NIBBLE);
         if (LCD_OK != retStatus){
-            retStatus = retStatus;  /* Preserve error status */
+            // retStatus = retStatus;  /* Preserve error status */
         }else{
             retStatus = LCD_GenerateEnablePulse();
             if (LCD_OK != retStatus){
-                retStatus = retStatus;  /* Preserve error status */
+                // retStatus = retStatus;  /* Preserve error status */
             }else{
                 /* Send low nibble */
                 retStatus = FunctionSet(LcdCong.BitOperation, LcdCong.LineDisplay, LcdCong.FontSize, LOW_NIBBLE);
                 if (LCD_OK != retStatus){
-                    retStatus = retStatus;  /* Preserve error status */
+                    // retStatus = retStatus;  /* Preserve error status */
                 }else{
                     retStatus = LCD_GenerateEnablePulse();
                     if (LCD_OK != retStatus){
-                        retStatus = retStatus;  /* Preserve error status */
+                        // retStatus = retStatus;  /* Preserve error status */
                     }else{
                         systickStat = SYSTICK_Wait_ms(1);  /* Wait >4.1ms as per datasheet */
                         
@@ -2209,20 +2768,20 @@ static LCD_Status_t LCD_InitSequence_4BitMode(void)
                                     retStatus = DisplayControl(LcdCong.Display, LcdCong.Cursor, LcdCong.Blink, HIGH_NIBBLE);
                                     
                                     if (LCD_OK != retStatus){
-                                        retStatus = retStatus;  /* Preserve error status */
+                                        // retStatus = retStatus;  /* Preserve error status */
                                     }else{
                                         retStatus = LCD_GenerateEnablePulse();
                                         if (LCD_OK != retStatus){
-                                            retStatus = retStatus;  /* Preserve error status */
+                                            // retStatus = retStatus;  /* Preserve error status */
                                         }else{
                                             /* Send low nibble */
                                             retStatus = DisplayControl(LcdCong.Display, LcdCong.Cursor, LcdCong.Blink, LOW_NIBBLE);
                                             if (LCD_OK != retStatus){
-                                                retStatus = retStatus;  /* Preserve error status */
+                                                // retStatus = retStatus;  /* Preserve error status */
                                             }else{
                                                 retStatus = LCD_GenerateEnablePulse();
                                                 if (LCD_OK != retStatus){
-                                                    retStatus = retStatus;  /* Preserve error status */
+                                                    // retStatus = retStatus;  /* Preserve error status */
                                                 }else{
                                                     systickStat = SYSTICK_Wait_ms(1);  /* Wait >100μs */
 
@@ -2234,20 +2793,20 @@ static LCD_Status_t LCD_InitSequence_4BitMode(void)
                                                         retStatus = ClearDisplay(HIGH_NIBBLE);
                                                         
                                                         if (LCD_OK != retStatus){
-                                                            retStatus = retStatus;  /* Preserve error status */
+                                                            // retStatus = retStatus;  /* Preserve error status */
                                                         }else{
                                                             retStatus = LCD_GenerateEnablePulse();
                                                             if (LCD_OK != retStatus){
-                                                                retStatus = retStatus;  /* Preserve error status */
+                                                                // retStatus = retStatus;  /* Preserve error status */
                                                             }else{
                                                                 /* Send low nibble */
                                                                 retStatus = ClearDisplay(LOW_NIBBLE);
                                                                 if (LCD_OK != retStatus){
-                                                                    retStatus = retStatus;  /* Preserve error status */
+                                                                    // retStatus = retStatus;  /* Preserve error status */
                                                                 }else{
                                                                     retStatus = LCD_GenerateEnablePulse();
                                                                     if (LCD_OK != retStatus){
-                                                                        retStatus = retStatus;  /* Preserve error status */
+                                                                        // retStatus = retStatus;  /* Preserve error status */
                                                                     }else{
                                                                         systickStat = SYSTICK_Wait_ms(2);  /* Wait for clear (1.64ms typical) */
 
@@ -2258,20 +2817,20 @@ static LCD_Status_t LCD_InitSequence_4BitMode(void)
                                                                             /* Send high nibble first */
                                                                             retStatus = EnteryModeSet(LcdCong.DisplayShiftOperation, LcdCong.IncrementStatus, HIGH_NIBBLE);
                                                                             if (LCD_OK != retStatus){
-                                                                                retStatus = retStatus;  /* Preserve error status */
+                                                                                // retStatus = retStatus;  /* Preserve error status */
                                                                             }else{
                                                                                 retStatus = LCD_GenerateEnablePulse();
                                                                                 if (LCD_OK != retStatus){
-                                                                                    retStatus = retStatus;  /* Preserve error status */
+                                                                                    // retStatus = retStatus;  /* Preserve error status */
                                                                                 }else{
                                                                                     /* Send low nibble */
                                                                                     retStatus = EnteryModeSet(LcdCong.DisplayShiftOperation, LcdCong.IncrementStatus, LOW_NIBBLE);
                                                                                     if (LCD_OK != retStatus){
-                                                                                        retStatus = retStatus;  /* Preserve error status */
+                                                                                        // retStatus = retStatus;  /* Preserve error status */
                                                                                     }else{
                                                                                         retStatus = LCD_GenerateEnablePulse();
                                                                                         if (LCD_OK != retStatus){
-                                                                                            retStatus = retStatus;  /* Preserve error status */
+                                                                                            // retStatus = retStatus;  /* Preserve error status */
                                                                                         }else{
                                                                                             retStatus = LCD_OK;
                                                                                         }
@@ -2356,42 +2915,153 @@ static void ExecutCreateCustomChar(){
 
         case CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_CURSOR_HIGH:
             retstat   = LCD_enuSetCGRAMAddress((CustomCharBuffer.location) << 3, HIGH_NIBBLE);
+            if(retstat != LCD_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retstat);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_CURSOR_LOW;
             break;
         case CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_CURSOR_LOW:
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_CURSOR_HIGH;
             break;
         case CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_CURSOR_HIGH:
             retstat   = LCD_enuSetCGRAMAddress((CustomCharBuffer.location) << 3, LOW_NIBBLE);
+            if(retstat != LCD_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retstat);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_CURSOR_LOW;
             break;
         case CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_CURSOR_LOW:
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
-            
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             customCharIterator = 0;
             createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_HIGH;
             break;
         case CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_HIGH:
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             retstat   = LCD_WriteByte(CustomCharBuffer.charmap[customCharIterator] >> HIGH_NIBBLE);
+            if(retstat != LCD_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retstat);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_LOW;
             break;
         case CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_LOW:
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_HIGH;
             break;
         case CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_HIGH:
             retstat    = LCD_WriteByte(CustomCharBuffer.charmap[customCharIterator++] >> LOW_NIBBLE);
+            if(retstat != LCD_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retstat);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_LOW;
             break;
         case CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_LOW:
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             if(customCharIterator >= SPECIAL_CHAR_LENGHT){
                 customCharIterator = 0;
                 createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_SET_CURSOR_DDRAM_HIGH;
@@ -2401,41 +3071,158 @@ static void ExecutCreateCustomChar(){
             break;
         case CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_SET_CURSOR_DDRAM_HIGH:
                 retstat    = LCD_SetCursor_Local(LCD_CurrentRow,LCD_CurrentCol,HIGH_NIBBLE);
+                if(retstat != LCD_OK){
+                    createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                    lcdState = LCD_NO_ACTION;
+                    if(Lcd_Callback != NULL){
+                        Lcd_Callback(retstat);
+                    }
+                    break;
+                }
                 gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+                if(gpioStatus != GPIO_OK){
+                    createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                    lcdState = LCD_NO_ACTION;
+                    if(Lcd_Callback != NULL){
+                        Lcd_Callback(LCD_GPIO_ERROR);
+                    }
+                    break;
+                }
                 createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_SET_CURSOR_DDRAM_LOW;
                 break;
         case CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_SET_CURSOR_DDRAM_LOW:
                 gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
-                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                if(gpioStatus != GPIO_OK){
+                    createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                    lcdState = LCD_NO_ACTION;
+                    if(Lcd_Callback != NULL){
+                        Lcd_Callback(LCD_GPIO_ERROR);
+                    }
+                    break;
+                }
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_SET_CURSOR_DDRAM_HIGH;
+                break;
         case CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_SET_CURSOR_DDRAM_HIGH :
                 retstat    = LCD_SetCursor_Local(LCD_CurrentRow,LCD_CurrentCol,LOW_NIBBLE);
+                if(retstat != LCD_OK){
+                    createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                    lcdState = LCD_NO_ACTION;
+                    if(Lcd_Callback != NULL){
+                        Lcd_Callback(retstat);
+                    }
+                    break;
+                }
                 gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+                if(gpioStatus != GPIO_OK){
+                    createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                    lcdState = LCD_NO_ACTION;
+                    if(Lcd_Callback != NULL){
+                        Lcd_Callback(LCD_GPIO_ERROR);
+                    }
+                    break;
+                }
                 createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_SET_CURSOR_DDRAM_LOW;
                 break;
         case CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_SET_CURSOR_DDRAM_LOW :
                 gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+                if(gpioStatus != GPIO_OK){
+                    createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                    lcdState = LCD_NO_ACTION;
+                    if(Lcd_Callback != NULL){
+                        Lcd_Callback(LCD_GPIO_ERROR);
+                    }
+                    break;
+                }
                 createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
                 lcdState = LCD_NO_ACTION;
+                /* Notify user that custom character creation completed successfully */
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_OK);
+                }
                 break;
             
         case CREATE_CUSTOM_CHAR_8BIT_CURSOR_HIGH:
             retstat   = LCD_enuSetCGRAMAddress((CustomCharBuffer.location) << 3, ALL_BITS);
+            if(retstat != LCD_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retstat);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             createCustomCharSeq = CREATE_CUSTOM_CHAR_8BIT_CURSOR_LOW;
             break;
         case CREATE_CUSTOM_CHAR_8BIT_CURSOR_LOW:
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             createCustomCharSeq = CREATE_CUSTOM_CHAR_8BIT_HIGH;
             break;
         case CREATE_CUSTOM_CHAR_8BIT_HIGH:
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             retstat   = LCD_WriteByte(CustomCharBuffer.charmap[customCharIterator++]);
+            if(retstat != LCD_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(retstat);
+                }
+                break;
+            }
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             createCustomCharSeq = CREATE_CUSTOM_CHAR_8BIT_LOW;  
             break;
         case CREATE_CUSTOM_CHAR_8BIT_LOW:
             gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(gpioStatus != GPIO_OK){
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                if(Lcd_Callback != NULL){
+                    Lcd_Callback(LCD_GPIO_ERROR);
+                }
+                break;
+            }
             if(customCharIterator >= SPECIAL_CHAR_LENGHT){
                 customCharIterator = 0;
                 createCustomCharSeq = CREATE_CUSTOM_CHAR_8BIT_SET_CURSOR_DDRAM_HIGH;
@@ -2445,13 +3232,41 @@ static void ExecutCreateCustomChar(){
             break;
         case CREATE_CUSTOM_CHAR_8BIT_SET_CURSOR_DDRAM_HIGH:
                 retstat    = LCD_SetCursor_Local(LCD_CurrentRow,LCD_CurrentCol,ALL_BITS);
+                if(retstat != LCD_OK){
+                    createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                    lcdState = LCD_NO_ACTION;
+                    if(Lcd_Callback != NULL){
+                        Lcd_Callback(retstat);
+                    }
+                    break;
+                }
                 gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+                if(gpioStatus != GPIO_OK){
+                    createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                    lcdState = LCD_NO_ACTION;
+                    if(Lcd_Callback != NULL){
+                        Lcd_Callback(LCD_GPIO_ERROR);
+                    }
+                    break;
+                }
                 createCustomCharSeq = CREATE_CUSTOM_CHAR_8BIT_SET_CURSOR_DDRAM_LOW;
                 break;
         case CREATE_CUSTOM_CHAR_8BIT_SET_CURSOR_DDRAM_LOW:
                 gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+                if(gpioStatus != GPIO_OK){
+                    createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                    lcdState = LCD_NO_ACTION;
+                    if(Lcd_Callback != NULL){
+                        Lcd_Callback(LCD_GPIO_ERROR);
+                    }
+                    break;
+                }
                 createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
                 lcdState = LCD_NO_ACTION;
+                /* Notify user that custom character creation completed successfully */
+                if(Lcd_Callback != NULL){
+                Lcd_Callback(LCD_CREATE_CUSTOM_CHAR_SUCCESSFULLY);
+                }
                 break;
 
         case CREATE_CUSTOM_CHAR_DONE:
@@ -2469,10 +3284,7 @@ LCD_Status_t LCD_enuAsynWriteCharacter(uint8_t displayedChar){
         if(INIT_FAILED == initSeq){
             retStatus = LCD_NOT_INITIALIZED;
         }else{
-            LCD_DataBuffer_t lcdBuffer = {
-                .row = LCD_CurrentRow,
-                .col = LCD_CurrentCol,
-            };
+            LCD_DataBuffer_t lcdBuffer;
             lcdBuffer.buff[0] = displayedChar;
             lcdBuffer.buff[1] = '\0';
             Queue_Push(&lcdBuffer);
@@ -2487,6 +3299,7 @@ LCD_Status_t LCD_enuAsynWriteCharacter(uint8_t displayedChar){
     }
     return retStatus;
 }
+
 
 LCD_Status_t LCD_AsynDisplayCustomChar(uint8_t location){
     LCD_Status_t retStatus = LCD_NOT_OK;
@@ -2507,9 +3320,9 @@ LCD_Status_t LCD_AsynDisplayCustomChar(uint8_t location){
                 Queue_Push(&lcdBuffer);
             
                 if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
-                    createCustomCharSeq = WRITE_STRING_4_BIT_HIGH_NIBBLE_HIGH;
+                    writeStringSeq = WRITE_STRING_4_BIT_HIGH_NIBBLE_HIGH;
                 }else{
-                    createCustomCharSeq = WRITE_STRING_8_BIT_HIGH;
+                    writeStringSeq = WRITE_STRING_8_BIT_HIGH;
                 }
                 lcdState = LCD_WRITE_STRING;
                 retStatus = LCD_OK;
@@ -2519,9 +3332,39 @@ LCD_Status_t LCD_AsynDisplayCustomChar(uint8_t location){
     return retStatus;
 }
 
+LCD_Status_t LCD_AsynDisplayCustomCharAtPosition(uint8_t location, uint8_t row, uint8_t col){
+    LCD_Status_t retStatus = LCD_NOT_OK;
+    if(LCD_NO_ACTION!=lcdState){
+        retStatus = LCD_BUSY;
+    }else{
+        if(INIT_FAILED == initSeq){
+            retStatus = LCD_NOT_INITIALIZED;
+        }else{
+    
+            /* Validate location (only 0-7 valid for 8 custom characters) */
+            if (location > LOCATION_MASK){
+                retStatus = LCD_WRONG_LOCATION;  /* Invalid custom character location */
+            }else{
+                LCD_DataBuffer_t lcdBuffer;
+                lcdBuffer.buff[0] = location;
+                lcdBuffer.buff[1] = '\0';
+                lcdBuffer.row = row;
+                lcdBuffer.col = col;
+                Queue_Push(&lcdBuffer);
+            
+                if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+                    writeStringSeq = WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_HIGH;
+                }else{
+                    writeStringSeq = WRITE_STRING_8BIT_CURSOR_HIGH;
+                }
+                lcdState = LCD_WRITE_STRING;
+                retStatus = LCD_OK;
+            }
+        }
+    }
+    return retStatus;
+}
 
-typedef void (*LCD_Callback_t)(LCD_Status_t status);
-static LCD_Callback_t Lcd_Callback = NULL;
 
 void LCD_vdAsyncRegisterCallback(LCD_Callback_t callback){
     Lcd_Callback = callback;

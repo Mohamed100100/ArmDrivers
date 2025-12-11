@@ -44,11 +44,15 @@ typedef enum {
     LCD_FAILED_TO_INIT,
     LCD_BUSY,
     LCD_WRONG_BIT_OPERATION,
+    LCD_INIT_SUCEESSFULLY,
+    LCD_WRITE_SUCCESSFULLY,
+    LCD_CREATE_CUSTOM_CHAR_SUCCESSFULLY,
 } LCD_Status_t;
 
 /******************************************************************************
  * LCD CONFIGURATION ENUMERATIONS
  ******************************************************************************/
+typedef void (*LCD_Callback_t)(LCD_Status_t status);
 
 /**
  * @brief Data bus width selection (8-bit or 4-bit interface)
@@ -269,6 +273,9 @@ LCD_Status_t LCD_enuAsynWriteString(uint8_t* displayedString);
 LCD_Status_t LCD_enuAsynCreateCustomChar(uint8_t location, const uint8_t charmap[8]);
 
 LCD_Status_t LCD_AsynDisplayCustomChar(uint8_t location);
+LCD_Status_t LCD_AsynDisplayCustomCharAtPosition(uint8_t location, uint8_t row, uint8_t col);
 
 LCD_Status_t LCD_enuAsynWriteStringAtPosition(uint8_t* displayedString, uint8_t row, uint8_t col);
+
+void LCD_vdAsyncRegisterCallback(LCD_Callback_t callback);
 #endif // LCD_H

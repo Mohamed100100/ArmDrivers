@@ -17,23 +17,32 @@ void LcdTest()
 
 
     
-    LCD_Status_t lcdStatus = LCD_enuInit();
+    LCD_Status_t lcdStatus = LCD_enuSynInit();
     
     if (LCD_OK == lcdStatus)
     {
         // Write "Hello World!"
-        LCD_enuWriteCharacter('H');
-        LCD_enuWriteCharacter('e');
-        LCD_enuWriteCharacter('l');
-        LCD_enuWriteCharacter('l');
-        LCD_enuWriteCharacter('o');
-        LCD_enuWriteCharacter(' ');
-        LCD_enuWriteCharacter('W');
-        LCD_enuWriteCharacter('o');
-        LCD_enuWriteCharacter('r');
-        LCD_enuWriteCharacter('l');
-        LCD_enuWriteCharacter('d');
-        LCD_enuWriteCharacter('!');
+        LCD_enuSyncWriteCharacter('H');
+        LCD_enuSyncWriteCharacter('e');
+        LCD_enuSyncWriteCharacter('l');
+        LCD_enuSyncWriteCharacter('l');
+        LCD_enuSyncWriteCharacter('o');
+        LCD_enuSyncWriteCharacter(' ');
+        LCD_enuSyncWriteCharacter('W');
+        LCD_enuSyncWriteCharacter('o');
+        LCD_enuSyncWriteCharacter('r');
+        LCD_enuSyncWriteCharacter('l');
+        LCD_enuSyncWriteCharacter('d');
+        LCD_enuSyncWriteCharacter('!');
+    //     LCD_enuSyncWriteCharacter('W');
+    //     LCD_enuSyncWriteCharacter('o');
+    //     LCD_enuSyncWriteCharacter('r');
+    //     LCD_enuSyncWriteCharacter('l');
+    //     LCD_enuSyncWriteCharacter('d');
+    //     LCD_enuSyncWriteCharacter('d');
+    //     LCD_enuSyncWriteCharacter('d');
+    //     LCD_enuSyncWriteCharacter('d');
+    //     LCD_enuSyncWriteCharacter('d');
     }
 
     // LCD_enuClearDisplay();
@@ -55,8 +64,8 @@ void LcdTest()
         0b00000
     };
 
-    LCD_enuCreateCustomChar(7,heart);
-    LCD_enuWriteCustomChar(7);
+    LCD_enuSyncCreateCustomChar(0,heart);
+    LCD_enuSyncWriteCustomChar(7);
 
     while(1)
     {

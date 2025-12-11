@@ -3,10 +3,8 @@
 
 int main(){
 
-    sevsegTest();
-    while (1)
-    {
-        /* code */
-    }
+// LcdTest();
+
+AsynchLcdTest();
     
 }

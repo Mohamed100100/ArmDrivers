@@ -8,5 +8,6 @@ void SwitchTest();
 void sevsegTest();
 void nvicTest();
 void testLinkerScript();
+void AsynchLcdTest();
 
 #endif
