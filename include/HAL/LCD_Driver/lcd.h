@@ -9,6 +9,14 @@
 #ifndef LCD_H
 #define LCD_H
 
+
+
+
+typedef enum {
+    ALL_BITS    = 0,
+    HIGH_NIBBLE = 4,
+    LOW_NIBBLE  = 0
+}Bits_t;
 /******************************************************************************
  * INCLUDES
  ******************************************************************************/
@@ -31,7 +39,11 @@ typedef enum {
     LCD_WRONG_ROW,           /**< Invalid row number (valid: 0-1) */
     LCD_WRONG_COLUMN,        /**< Invalid column number (valid: 0-15) */
     LCD_ERROR_SPECIALCHAR,   /**< Custom character creation failed */
-    LCD_WRONG_LOCATION       /**< Invalid custom character location (valid: 0-7) */
+    LCD_WRONG_LOCATION,      /**< Invalid custom character location (valid: 0-7) */
+    LCD_NOT_INITIALIZED,
+    LCD_FAILED_TO_INIT,
+    LCD_BUSY,
+    LCD_WRONG_BIT_OPERATION,
 } LCD_Status_t;
 
 /******************************************************************************
@@ -160,10 +172,6 @@ typedef struct {
  * @brief Pin configuration for 8-bit mode (11 pins total)
  */
 typedef struct {
-    LCD_PinInfo_t  DB0;  /**< Data bit 0 (LSB) */
-    LCD_PinInfo_t  DB1;  /**< Data bit 1 */
-    LCD_PinInfo_t  DB2;  /**< Data bit 2 */
-    LCD_PinInfo_t  DB3;  /**< Data bit 3 */
     LCD_PinInfo_t  DB4;  /**< Data bit 4 */
     LCD_PinInfo_t  DB5;  /**< Data bit 5 */
     LCD_PinInfo_t  DB6;  /**< Data bit 6 */
@@ -171,6 +179,10 @@ typedef struct {
     LCD_PinInfo_t  EN;   /**< Enable pin (latch signal) */
     LCD_PinInfo_t  RW;   /**< Read/Write pin (0=Write, 1=Read) */
     LCD_PinInfo_t  RS;   /**< Register Select (0=Command, 1=Data) */
+    LCD_PinInfo_t  DB0;  /**< Data bit 0 (LSB) */
+    LCD_PinInfo_t  DB1;  /**< Data bit 1 */
+    LCD_PinInfo_t  DB2;  /**< Data bit 2 */
+    LCD_PinInfo_t  DB3;  /**< Data bit 3 */
 } LCD_Pinout_8BitMode_t;
 
 /**
@@ -218,32 +230,45 @@ typedef struct {
  ******************************************************************************/
 
 /* Initialization */
-LCD_Status_t LCD_enuInit();
+LCD_Status_t LCD_enuSynInit();
 
 /* Character Output */
-LCD_Status_t LCD_enuWriteCharacter(uint8_t displayedChar);
+LCD_Status_t LCD_enuSyncWriteCharacter(uint8_t displayedChar);
 
 /* Display Control */
-LCD_Status_t LCD_enuClearDisplay();
-LCD_Status_t LCD_enuSetDisplay(LCD_Display_t displayState);
-LCD_Status_t LCD_enuReturnHome();
+LCD_Status_t LCD_enuSyncClearDisplay();
+LCD_Status_t LCD_enuSyncSetDisplay(LCD_Display_t displayState);
+LCD_Status_t LCD_enuSyncReturnHome();
 
 /* Cursor Control */
-LCD_Status_t LCD_enuSetCursor(LCD_Cursor_t cursorState);
-LCD_Status_t LCD_enuSetBlink(LCD_Blink_t blinkState);
-LCD_Status_t LCD_enuSetCursorPosition(uint8_t row, uint8_t col);
+LCD_Status_t LCD_enuSyncSetCursor(LCD_Cursor_t cursorState);
+LCD_Status_t LCD_enuSyncSetBlink(LCD_Blink_t blinkState);
+LCD_Status_t LCD_enuSyncSetCursorPosition(uint8_t row, uint8_t col);
 
 /* Text Direction and Shift */
-LCD_Status_t LCD_enuSetIncrementDecrementMode(LCD_IncDec_t incrementDecrement);
-LCD_Status_t LCD_enuDisplayShift(LCD_DisplayShift_t displayShift);
+LCD_Status_t LCD_enuSyncSetIncrementDecrementMode(LCD_IncDec_t incrementDecrement);
+LCD_Status_t LCD_enuSyncDisplayShift(LCD_DisplayShift_t displayShift);
 
 /* Display Configuration */
-LCD_Status_t LCD_enuSetFontSize(LCD_FontSize_t FontSize);
-LCD_Status_t LCD_enuSetLineDisplay(LCD_LineDisplay_t LineDisplay);
-LCD_Status_t LCD_enuSetBitOperation(LCD_BitOperation_t bitOperation);
+LCD_Status_t LCD_enuSyncSetFontSize(LCD_FontSize_t FontSize);
+LCD_Status_t LCD_enuSyncSetLineDisplay(LCD_LineDisplay_t LineDisplay);
 
 /* Custom Characters */
-LCD_Status_t LCD_enuCreateCustomChar(uint8_t location, const uint8_t charmap[8]);
-LCD_Status_t LCD_enuWriteCustomChar(uint8_t location);
+LCD_Status_t LCD_enuSyncCreateCustomChar(uint8_t location, const uint8_t charmap[8]);
+LCD_Status_t LCD_enuSyncWriteCustomChar(uint8_t location);
 
+
+/* Initialization */
+LCD_Status_t LCD_enuAsynInit();
+
+/* Character Output */
+LCD_Status_t LCD_enuAsynWriteCharacter(uint8_t displayedChar);
+
+LCD_Status_t LCD_enuAsynWriteString(uint8_t* displayedString);
+
+LCD_Status_t LCD_enuAsynCreateCustomChar(uint8_t location, const uint8_t charmap[8]);
+
+LCD_Status_t LCD_AsynDisplayCustomChar(uint8_t location);
+
+LCD_Status_t LCD_enuAsynWriteStringAtPosition(uint8_t* displayedString, uint8_t row, uint8_t col);
 #endif // LCD_H

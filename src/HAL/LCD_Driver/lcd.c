@@ -7,8 +7,11 @@
  ******************************************************************************/
 
 #include "LIB/stdtypes.h"
+#include <string.h>
+#include "OS/schedule.h"
 #include "MCAL/GPIO_Driver/gpio_int.h"
 #include "MCAL/SYSTICK_TIMER_Driver/systick.h"
+#include "HAL/LCD_Driver/lcd_queue.h"
 #include "HAL/LCD_Driver/lcd.h"
 
 #define NUMBER_OF_BITS_IN_8_MODE (11UL)
@@ -35,6 +38,110 @@
  * GLOBAL VARIABLES AND CONSTANTS
  ******************************************************************************/
 
+// typedef enum {
+//     ALL_BITS    = 0,
+//     HIGH_NIBBLE = 4,
+//     LOW_NIBBLE  = 0
+// }Bits_t;
+
+
+typedef enum {
+    LCD_NO_ACTION,
+    LCD_INIT,
+    LCD_WRITE_STRING,
+    LCD_CREATE_CUSTOM_CHAR,
+}LCD_Asyn_States_t;
+
+typedef enum {
+    INIT_8BIT_START_SEQUANCE_HIGH,
+    INIT_8BIT_START_SEQUANCE_LOW, 
+    INIT_8BIT_FUNCTION_SET_HIGH,
+    INIT_8BIT_FUNCTION_SET_LOW,
+    INIT_8BIT_DISPLAY_ON_HIGH,
+    INIT_8BIT_DISPLAY_ON_LOW,
+    INIT_8BIT_CLEAR_DISPLAY_HIGH,
+    INIT_8BIT_CLEAR_DISPLAY_LOW,
+    INIT_8BIT_ENTRY_MODE_HIGH,
+    INIT_8BIT_ENTRY_MODE_LOW,
+
+    INIT_4BIT_HIGH_NIBBLE_START_SEQUANCE_HIGH,
+    INIT_4BIT_HIGH_NIBBLE_START_SEQUANCE_LOW,
+    INIT_4BIT_SWITCH_TO_4BIT_MODE_HIGH,
+    INIT_4BIT_SWITCH_TO_4BIT_MODE_LOW,
+    INIT_4BIT_HIGH_NIBBLE_FUNCTION_SET_HIGH,
+    INIT_4BIT_HIGH_NIBBLE_FUNCTION_SET_LOW,
+    INIT_4BIT_HIGH_NIBBLE_DISPLAY_ON_HIGH,
+    INIT_4BIT_HIGH_NIBBLE_DISPLAY_ON_LOW,
+    INIT_4BIT_HIGH_NIBBLE_CLEAR_DISPLAY_HIGH,
+    INIT_4BIT_HIGH_NIBBLE_CLEAR_DISPLAY_LOW,
+    INIT_4BIT_HIGH_NIBBLE_ENTRY_MODE_HIGH,
+    INIT_4BIT_HIGH_NIBBLE_ENTRY_MODE_LOW,
+    INIT_4BIT_LOW_NIBBLE_FUNCTION_SET_HIGH,
+    INIT_4BIT_LOW_NIBBLE_FUNCTION_SET_LOW,
+    INIT_4BIT_LOW_NIBBLE_DISPLAY_ON_HIGH,
+    INIT_4BIT_LOW_NIBBLE_DISPLAY_ON_LOW,
+    INIT_4BIT_LOW_NIBBLE_CLEAR_DISPLAY_HIGH,
+    INIT_4BIT_LOW_NIBBLE_CLEAR_DISPLAY_LOW,
+    INIT_4BIT_LOW_NIBBLE_ENTRY_MODE_HIGH,
+    INIT_4BIT_LOW_NIBBLE_ENTRY_MODE_LOW,
+    INIT_DONE,
+    INIT_FAILED
+}LCD_InitSeq_t;
+
+
+// typedef enum{
+//     WRITE_CHAR_8BIT_HIGH,
+//     WRITE_CHAR_8BIT_LOW,
+//     WRITE_CHAR_4BIT_HIGH_NIBBLE_HIGH,
+//     WRITE_CHAR_4BIT_HIGH_NIBBLE_LOW,
+//     WRITE_CHAR_4BIT_LOW_NIBBLE_HIGH,
+//     WRITE_CHAR_4BIT_LOW_NIBBLE_LOW,
+//     WRITE_CHAR_DONE
+// }LCD_WriteSeq_t;
+
+typedef enum {
+    CREATE_CUSTOM_CHAR_8BIT_CURSOR_HIGH,
+    CREATE_CUSTOM_CHAR_8BIT_CURSOR_LOW,
+    CREATE_CUSTOM_CHAR_8BIT_HIGH,
+    CREATE_CUSTOM_CHAR_8BIT_LOW,
+    CREATE_CUSTOM_CHAR_8BIT_SET_CURSOR_DDRAM_HIGH,
+    CREATE_CUSTOM_CHAR_8BIT_SET_CURSOR_DDRAM_LOW,
+
+    CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_CURSOR_HIGH,
+    CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_CURSOR_LOW,
+    CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_CURSOR_HIGH,
+    CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_CURSOR_LOW,
+    CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_HIGH,
+    CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_LOW,
+    CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_HIGH,
+    CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_LOW,
+    CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_SET_CURSOR_DDRAM_HIGH,
+    CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_SET_CURSOR_DDRAM_LOW,
+    CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_SET_CURSOR_DDRAM_HIGH,
+    CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_SET_CURSOR_DDRAM_LOW,
+
+    CREATE_CUSTOM_CHAR_DONE
+}LCD_CreateCustomCharSeq_t;
+
+typedef enum{
+    WRITE_STRING_8BIT_CURSOR_HIGH,
+    WRITE_STRING_8BIT_CURSOR_LOW,
+    WRITE_STRING_8_BIT_HIGH,
+    WRITE_STRING_8_BIT_LOW,
+
+    WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_HIGH,
+    WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_LOW,
+    WRITE_STRING_4BIT_LOW_NIBBLE_CURSOR_HIGH,
+    WRITE_STRING_4BIT_LOW_NIBBLE_CURSOR_LOW,
+    WRITE_STRING_4_BIT_HIGH_NIBBLE_HIGH,
+    WRITE_STRING_4_BIT_HIGH_NIBBLE_LOW,
+    WRITE_STRING_4_BIT_LOW_NIBBLE_HIGH,
+    WRITE_STRING_4_BIT_LOW_NIBBLE_LOW,
+
+    WRITE_STRING_DONE
+}LCD_WriteStringSeq_t;
+
+
 /**
  * @brief GPIO pin value lookup table
  * @details Maps boolean values (0,1) to GPIO states (LOW, HIGH)
@@ -57,6 +164,29 @@ static uint8_t LCD_CurrentCol = 0;  /* Current column position (0-15) */
 /******************************************************************************
  * FORWARD DECLARATIONS - STATIC (PRIVATE) FUNCTIONS
  ******************************************************************************/
+void static ExecuteInitSeq();
+void static lcdRunnableCBF();
+void static ExecuteWriteString();
+static LCD_Status_t LCD_enuInitGpioPins();
+static LCD_Status_t LCD_InitSequence_8BitMode(void);
+static LCD_Status_t ClearDisplay(Bits_t bits);
+static LCD_Status_t LCD_InitSequence_4BitMode(void);
+static LCD_Status_t LCD_SetCursor_Local(uint8_t row, uint8_t col, Bits_t nibble);
+static void ExecutCreateCustomChar();
+
+static SCHED_Runnable_t lcdRunnable = {
+    .CBF = lcdRunnableCBF,
+    .Args = NULL,
+    .FirstDalay_ms = 50,
+    .Periodicity_ms = 5,
+    .Priority = 2
+};
+
+static LCD_Asyn_States_t lcdState = LCD_NO_ACTION;
+static LCD_InitSeq_t initSeq = INIT_DONE;
+static LCD_WriteStringSeq_t writeStringSeq = WRITE_STRING_DONE;
+LCD_CreateCustomCharSeq_t createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+
 
 /**
  * @brief Write a byte to LCD data pins (DB0-DB7)
@@ -72,11 +202,7 @@ static LCD_Status_t LCD_WriteByte(uint8_t byte);
  */
 static LCD_Status_t LCD_WriteCommand(uint8_t cmd);
 
-/**
- * @brief Perform HD44780 initialization sequence
- * @return LCD_Status_t: Initialization status
- */
-static LCD_Status_t LCD_InitSequence();
+
 
 /**
  * @brief Set LCD function parameters (8/4-bit, lines, font)
@@ -85,8 +211,7 @@ static LCD_Status_t LCD_InitSequence();
  * @param FontSize: 5x8 or 5x10 dot font
  * @return LCD_Status_t: Operation status
  */
-static LCD_Status_t FunctionSet(LCD_BitOperation_t bitOperation, LCD_LineDisplay_t LineDisplay,LCD_FontSize_t FontSize);
-
+static LCD_Status_t FunctionSet(LCD_BitOperation_t bitOperation, LCD_LineDisplay_t LineDisplay,LCD_FontSize_t FontSize,Bits_t bits);
 /**
  * @brief Control display, cursor, and blink settings
  * @param Display: Display ON/OFF
@@ -94,7 +219,7 @@ static LCD_Status_t FunctionSet(LCD_BitOperation_t bitOperation, LCD_LineDisplay
  * @param Blink: Blink ON/OFF
  * @return LCD_Status_t: Operation status
  */
-static LCD_Status_t DisplayControl(LCD_Display_t Display,LCD_Cursor_t Cursor,LCD_Blink_t Blink);
+static LCD_Status_t DisplayControl(LCD_Display_t Display,LCD_Cursor_t Cursor,LCD_Blink_t Blink,Bits_t bits);
 
 /**
  * @brief Set entry mode (increment/decrement, shift)
@@ -102,21 +227,22 @@ static LCD_Status_t DisplayControl(LCD_Display_t Display,LCD_Cursor_t Cursor,LCD
  * @param IncrementStatus: Increment or decrement cursor
  * @return LCD_Status_t: Operation status
  */
-static LCD_Status_t EnteryModeSet(LCD_DisplayShift_t DisplayShiftOperation,LCD_IncDec_t IncrementStatus);
+static LCD_Status_t EnteryModeSet(LCD_DisplayShift_t DisplayShiftOperation,LCD_IncDec_t IncrementStatus,Bits_t bits);
 
 /**
  * @brief Set DDRAM address for cursor positioning
  * @param address: DDRAM address (0x00 to 0x7F)
  * @return LCD_Status_t: Operation status
  */
-static LCD_Status_t LCD_enuSetDDRAMAddress(uint8_t address);
-
+static LCD_Status_t LCD_enuSetDDRAMAddress(uint8_t address,Bits_t bits);
 /**
  * @brief Set CGRAM address for custom character creation
  * @param address: CGRAM address (0x00 to 0x3F)
  * @return LCD_Status_t: Operation status
  */
-static LCD_Status_t LCD_enuSetCGRAMAddress(uint8_t address);
+static LCD_Status_t LCD_enuSetCGRAMAddress(uint8_t address,Bits_t bits);
+
+static LCD_Status_t LCD_GenerateEnablePulse(void);
 
 /******************************************************************************
  * EXTERNAL VARIABLES
@@ -141,48 +267,25 @@ extern const LCD_Pinout_8BitMode_t LcdPinout ;   /* LCD pin mapping structure */
  *         - LCD_INIT_ERROR: GPIO or initialization failure
  * @note Only 8-bit mode is currently supported
  */
-LCD_Status_t LCD_enuInit()
+LCD_Status_t LCD_enuSynInit()
 {
     LCD_Status_t retStatus = LCD_NOT_OK;  /* Default return status */
 
-    /* Check if 8-bit operation mode is selected */
-    if(LCD_8_BIT_OPERATION == LcdCong.BitOperation){
+    /* Initialize GPIO pins based on bit operation mode */
+    retStatus = LCD_enuInitGpioPins();
+    
+    if(LCD_OK == retStatus){
 
-        /* Configure GPIO pin settings for LCD pins */
-        GPIO_cfg_t gpioCfg = {
-            .alternateFunction = GPIO_AF0,                      /* No alternate function */
-            .mode = GPIO_MODE_OUTPUT,                           /* Output mode for LCD control */
-            .outputType = GPIO_OUTPUT_TYPE_PUSH_PULL,          /* Push-pull output */
-            .pull = GPIO_NO_PULL,                              /* No pull-up/down resistor */
-            .speed = GPIO_SPEED_DEFAULT                        /* Default speed */
-        };
-
-        GPIO_Status_t gpioStat = GPIO_NOT_OK;                  /* GPIO operation status */
-        const LCD_PinInfo_t *ptr = &(LcdPinout.DB0);          /* Pointer to first pin (DB0) */
-
-        /* Initialize all 11 pins in sequence (DB0-DB7, RS, RW, EN) */
-        for (uint8_t i = 0; i < NUMBER_OF_BITS_IN_8_MODE; i++){
-            gpioCfg.port = (ptr + i)->port;  /* Get port from pin structure */
-            gpioCfg.pin = (ptr + i)->pin;    /* Get pin number from pin structure */
-            gpioStat = GPIO_enuInit(&gpioCfg);  /* Initialize GPIO pin */
-
-            /* Check if GPIO initialization failed */
-            if (GPIO_OK != gpioStat){
-                retStatus = LCD_INIT_ERROR;  /* Set error status */
-                return retStatus;            /* Early return on error */
-            }
+        if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+            /* Execute HD44780 initialization sequence for 8-bit mode */
+            retStatus = LCD_InitSequence_8BitMode();
+        }else if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+            /* Execute HD44780 initialization sequence for 4-bit mode */
+            retStatus = LCD_InitSequence_4BitMode();
         }
-        
-        /* Perform HD44780 initialization sequence */
-        LCD_InitSequence();
-        
-        retStatus = LCD_OK;  /* All initialization steps successful */
     }
-    else if (LCD_4_BIT_OPERATION == LcdCong.BitOperation)
-    {
-        /* 4-bit mode not yet implemented */
-        // TODO: Implement 4-bit mode
-        retStatus = LCD_INIT_ERROR;
+    else {
+        //retStatus = retStatus;  /* Preserve error status */
     }
     return retStatus;  /* Single exit point */
 }
@@ -199,10 +302,12 @@ LCD_Status_t LCD_enuInit()
  * @return LCD_Status_t: Initialization status
  * @note This function implements proper timing as per HD44780 datasheet
  */
-static LCD_Status_t LCD_InitSequence(void)
+static LCD_Status_t LCD_InitSequence_8BitMode(void)
 {
     LCD_Status_t retStatus = LCD_NOT_OK;        /* Function return status */
     SYSTICK_Status_t systickStat = SYSTICK_NOT_OK;  /* Timer status */
+    GPIO_Status_t gpioStatus = GPIO_NOT_OK;
+    uint8_t startSeqCount = 0;
         
     /* Wait for LCD power-up (>40ms after Vcc rises to 4.5V) */
     systickStat = SYSTICK_Wait_ms(40);
@@ -212,47 +317,101 @@ static LCD_Status_t LCD_InitSequence(void)
     }else{
         /* ========== HD44780 Initialization by Instruction ========== */
         
-        /* Step 1: Function Set - Configure interface, lines, and font */
-        retStatus = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize);
+        /* Start Sequence: Send 0x30 three times to ensure LCD is in known state */
+        for(startSeqCount = 0; startSeqCount < 3; startSeqCount++){
+            /* Set RS=0 for command, RW=0 for write */
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_LOW);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);
+            
+            /* Send 0x30 initialization command */
+            retStatus = LCD_WriteByte(0x30 >> ALL_BITS);
+            if (LCD_OK != retStatus){
+                break;
+            }
+            
+            /* Generate enable pulse */
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK != retStatus){
+                break;
+            }
+            
+            /* Wait between start sequence commands */
+            systickStat = SYSTICK_Wait_ms(5);
+            if (SYSTICK_OK != systickStat){
+                retStatus = LCD_TIMER_ERROR;
+                break;
+            }
+        }
         
+        if (LCD_OK != retStatus){
+            /* Start sequence failed */
+        }else{
+            /* Step 1: Function Set - Configure interface, lines, and font */
+            retStatus = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,ALL_BITS);
         if (LCD_OK != retStatus){
             retStatus = retStatus;  /* Preserve error status */
         }else{
-            systickStat = SYSTICK_Wait_ms(1);  /* Wait >4.1ms as per datasheet */
-            
-            if (SYSTICK_OK != systickStat){
-                retStatus = LCD_TIMER_ERROR;
+            // generate high >> low
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK != retStatus){
+                retStatus = retStatus;  /* Preserve error status */
             }else{
-                /* Step 2: Display Control - Configure display, cursor, blink */
-                retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink);
-
-                if (LCD_OK != retStatus){
-                    retStatus = retStatus;  /* Preserve error status */
+                systickStat = SYSTICK_Wait_ms(1);  /* Wait >4.1ms as per datasheet */
+                
+                if (SYSTICK_OK != systickStat){
+                    retStatus = LCD_TIMER_ERROR;
                 }else{
-                    systickStat = SYSTICK_Wait_ms(1);  /* Wait >100μs */
+                    /* Step 2: Display Control - Configure display, cursor, blink */
+                    retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,ALL_BITS);
                     
-                    if (SYSTICK_OK != systickStat){
-                        retStatus = LCD_TIMER_ERROR;
+                    if (LCD_OK != retStatus){
+                        retStatus = retStatus;  /* Preserve error status */
                     }else{
-                        /* Step 3: Clear Display - Clears all display and returns home */
-                        retStatus = LCD_enuClearDisplay();  /* Clear display command */
-                        
+                        // generate high >> low
+                        retStatus = LCD_GenerateEnablePulse();
                         if (LCD_OK != retStatus){
                             retStatus = retStatus;  /* Preserve error status */
                         }else{
-                            systickStat = SYSTICK_Wait_ms(2);  /* Wait for clear (1.64ms typical) */
-                            
+                            systickStat = SYSTICK_Wait_ms(1);  /* Wait >100μs */
+
                             if (SYSTICK_OK != systickStat){
                                 retStatus = LCD_TIMER_ERROR;
                             }else{
-                                /* Step 4: Entry Mode Set - Configure increment and shift */
-                                retStatus =EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus);
+                                /* Step 3: Clear Display - Clears all display and returns home */
+                                retStatus = ClearDisplay(ALL_BITS);  /* Clear display command */
+                                
+                                if (LCD_OK != retStatus){
+                                    retStatus = retStatus;  /* Preserve error status */
+                                }else{
+                                    // generate high >> low
+                                    retStatus = LCD_GenerateEnablePulse();
+                                    if (LCD_OK != retStatus){
+                                        retStatus = retStatus;  /* Preserve error status */
+                                    }else{
+                                        systickStat = SYSTICK_Wait_ms(2);  /* Wait for clear (1.64ms typical) */
+
+                                        if (SYSTICK_OK != systickStat){
+                                            retStatus = LCD_TIMER_ERROR;
+                                        }else{
+                                            /* Step 4: Entry Mode Set - Configure increment and shift */
+                                            retStatus =EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus,ALL_BITS);
+                                            // generate high >> low
+                                            retStatus = LCD_GenerateEnablePulse();
+                                            if (LCD_OK != retStatus){
+                                                retStatus = retStatus;  /* Preserve error status */
+                                            }else{
+                                                retStatus = LCD_OK;
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
     }
     
     return retStatus;  /* Single exit point */
@@ -269,86 +428,73 @@ static LCD_Status_t LCD_InitSequence(void)
  *         - LCD_TIMER_ERROR: Timer operation failed
  * @note This function handles the low-level LCD write protocol
  */
-LCD_Status_t LCD_WriteByte(uint8_t byte){
-    LCD_Status_t retStatus = LCD_NOT_OK;    /* Function return status */
+static LCD_Status_t LCD_WriteByte(uint8_t byte){
+    LCD_Status_t retStatus = LCD_OK;        /* Function return status */
     GPIO_Status_t gpioStatus = GPIO_NOT_OK; /* GPIO operation status */
 
-    /* Write bit 0 to DB0 pin */
-    gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB0.port, LcdPinout.DB0.pin,LCDpinVAl[(byte >> 0) & 1]);
+    uint8_t bitIndex = 0;
+    if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+        /* Write bit 0 to DB0 pin */
+        gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB0.port, LcdPinout.DB0.pin,LCDpinVAl[(byte >> (bitIndex++)) & 1]);
 
-    if (gpioStatus != GPIO_OK){
-        retStatus = LCD_GPIO_ERROR;
-    }else{
-        /* Write bit 1 to DB1 pin */
-        gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB1.port, LcdPinout.DB1.pin,LCDpinVAl[(byte >> 1) & 1]);
         if (gpioStatus != GPIO_OK){
             retStatus = LCD_GPIO_ERROR;
         }else{
-            /* Write bit 2 to DB2 pin */
-            gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB2.port, LcdPinout.DB2.pin,LCDpinVAl[(byte >> 2) & 1]);
+            /* Write bit 1 to DB1 pin */
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB1.port, LcdPinout.DB1.pin,LCDpinVAl[(byte >>  (bitIndex++)) & 1]);
             if (gpioStatus != GPIO_OK){
                 retStatus = LCD_GPIO_ERROR;
             }else{
-                /* Write bit 3 to DB3 pin */
-                gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB3.port, LcdPinout.DB3.pin,LCDpinVAl[(byte >> 3) & 1]);
-
+                /* Write bit 2 to DB2 pin */
+                gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB2.port, LcdPinout.DB2.pin,LCDpinVAl[(byte >>  (bitIndex++)) & 1]);
                 if (gpioStatus != GPIO_OK){
                     retStatus = LCD_GPIO_ERROR;
                 }else{
-                    /* Write bit 4 to DB4 pin */
-                    gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB4.port, LcdPinout.DB4.pin,LCDpinVAl[(byte >> 4) & 1]);
+                    /* Write bit 3 to DB3 pin */
+                    gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB3.port, LcdPinout.DB3.pin,LCDpinVAl[(byte >>  (bitIndex++)) & 1]);
+
                     if (gpioStatus != GPIO_OK){
                         retStatus = LCD_GPIO_ERROR;
                     }else{
-                        /* Write bit 5 to DB5 pin */
-                        gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB5.port, LcdPinout.DB5.pin,LCDpinVAl[(byte >> 5) & 1]);
-                        if (gpioStatus != GPIO_OK){
-                            retStatus = LCD_GPIO_ERROR;
-                        }else{
-                            /* Write bit 6 to DB6 pin */
-                            gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB6.port, LcdPinout.DB6.pin,LCDpinVAl[(byte >> 6) & 1]);
-                            if (gpioStatus != GPIO_OK){
-                                retStatus = LCD_GPIO_ERROR;
-                            }else{
-                                /* Write bit 7 to DB7 pin */
-                                gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB7.port, LcdPinout.DB7.pin,LCDpinVAl[(byte >> 7) & 1]);
-                                if (gpioStatus != GPIO_OK){
-                                    retStatus = LCD_GPIO_ERROR;
-                                }else{
-                                    /* Generate Enable pulse (HIGH -> LOW) */
-                                                                        /* Set EN pin HIGH to start pulse */
-                                    gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port,LcdPinout.EN.pin, GPIO_HIGH);
-                                    if (gpioStatus != GPIO_OK){
-                                        retStatus = LCD_GPIO_ERROR;
-                                    }else{
-                                        SYSTICK_Status_t systickStat = SYSTICK_NOT_OK;  /* Timer status */
-                                        systickStat = SYSTICK_Wait_ms(1);  /* Enable pulse width (>450ns required) */
-                                        if(SYSTICK_OK != systickStat){
-                                            retStatus = LCD_TIMER_ERROR;
-                                        }else{
-                                            /* Set EN pin LOW to latch data into LCD */
-                                            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port,LcdPinout.EN.pin, GPIO_LOW);
-                                            if (gpioStatus != GPIO_OK){
-                                                retStatus = LCD_GPIO_ERROR;
-                                            }else {
-                                                systickStat = SYSTICK_Wait_ms(1);  /* Command execution time */
-                                                if(SYSTICK_OK != systickStat){
-                                                    retStatus = LCD_TIMER_ERROR;
-                                                }else{
-                                                    retStatus = LCD_OK;   /* All operations successful */
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        retStatus = LCD_OK;   /* First 4 bits written successfully */
                     }
                 }
             }
         }
+    }else{
+        // continue with 4-bit mode
     }
-
+    if (retStatus == LCD_OK){
+        /* Continue with bits 4-7 */
+        /* Write bit 4 to DB4 pin */
+       gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB4.port, LcdPinout.DB4.pin,LCDpinVAl[(byte >>  (bitIndex++)) & 1]);
+       if (gpioStatus != GPIO_OK){
+           retStatus = LCD_GPIO_ERROR;
+       }else{
+           /* Write bit 5 to DB5 pin */
+           gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB5.port, LcdPinout.DB5.pin,LCDpinVAl[(byte >>  (bitIndex++)) & 1]);
+           if (gpioStatus != GPIO_OK){
+               retStatus = LCD_GPIO_ERROR;
+           }else{
+               /* Write bit 6 to DB6 pin */
+               gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB6.port, LcdPinout.DB6.pin,LCDpinVAl[(byte >>  (bitIndex++)) & 1]);
+               if (gpioStatus != GPIO_OK){
+                   retStatus = LCD_GPIO_ERROR;
+               }else{
+                   /* Write bit 7 to DB7 pin */
+                   gpioStatus = GPIO_enuSetPinVal(LcdPinout.DB7.port, LcdPinout.DB7.pin,LCDpinVAl[(byte >>  (bitIndex++)) & 1]);
+                   if (gpioStatus != GPIO_OK){
+                       retStatus = LCD_GPIO_ERROR;
+                   }else{
+                       retStatus = LCD_OK;   /* All operations successful */
+                   }
+               }
+            }
+        }
+    }else{
+        // retStatus = retStatus;  /* Preserve error status */
+    }
+    
     return retStatus;  /* Single exit point - MISRA C compliant */
 }
 
@@ -406,50 +552,91 @@ static LCD_Status_t LCD_WriteCommand(uint8_t cmd)
  * @note Cursor tracking is updated automatically
  *       Line wrap occurs at column 16 (for 16x2 LCD)
  */
-LCD_Status_t LCD_enuWriteCharacter(uint8_t displayedChar)
+LCD_Status_t LCD_enuSyncWriteCharacter(uint8_t displayedChar)
 {
     LCD_Status_t retStatus = LCD_NOT_OK;    /* Function return status */
     GPIO_Status_t gpioStatus = GPIO_NOT_OK; /* GPIO operation status */
     
     /* Set RS = 1 for data mode (data register) */
-    gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, 
-                                    LcdPinout.RS.pin, 
-                                    GPIO_HIGH);
+    gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_HIGH);
     
     if (GPIO_OK != gpioStatus){
         retStatus = LCD_GPIO_ERROR;
     }else{
         /* Set RW = 0 for write mode */
-        gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, 
-                                        LcdPinout.RW.pin, 
-                                        GPIO_LOW);
+        gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);
         
         if (GPIO_OK != gpioStatus){
             retStatus = LCD_GPIO_ERROR;
         }else{
-            /* Write data byte (character) to LCD */
-            retStatus = LCD_WriteByte(displayedChar);
-            
-            if (LCD_OK == retStatus){
-                /* Update column position (auto-increment after write) */
-                LCD_CurrentCol++;
-                
-                /* Handle line wrap for 16-column LCD */
-                if (LCD_CurrentCol >= COLUMN_LENGTH){
-                    LCD_CurrentCol = 0;  /* Reset column to start */
-                    
-                    /* Move to next line */
-                    if (LCD_CurrentRow == 0){
-                        LCD_CurrentRow = 1;  /* Move from row 0 to row 1 */
-                    }else{
-                        LCD_CurrentRow = 0;  /* Wrap from row 1 to row 0 */
-                    }
 
-                    /* Update LCD cursor position after wrap */
-                    LCD_enuSetCursorPosition(LCD_CurrentRow,LCD_CurrentCol);
+            if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+                /* In 4-bit mode, send higher nibble first */
+                uint8_t highNibble = displayedChar >> HIGH_NIBBLE;
+                retStatus = LCD_WriteByte(highNibble);
+                
+                if (LCD_OK == retStatus){
+                    retStatus = LCD_GenerateEnablePulse();
+                    if (LCD_OK == retStatus){
+                        // continue to send lower nibble
+                        uint8_t lowNibble = displayedChar >> LOW_NIBBLE;
+                        retStatus = LCD_WriteByte(lowNibble);
+                        if (LCD_OK == retStatus){
+                            retStatus = LCD_GenerateEnablePulse();
+                            if (LCD_OK == retStatus){
+                                retStatus = LCD_OK; /* All operations successful */
+                            }else{
+                                // retStatus = retStatus;  /* Preserve error status */
+                            }
+                        }else{
+                            // retStatus = retStatus;  /* Preserve error status */
+                        }
+                    }else{
+                        // retStatus = retStatus;  /* Preserve error status */
+                    }
+                }else{
+                    // return retStatus;  /* Exit on error */
                 }
+
+            }else if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+                /* In 8-bit mode, send full byte directly */
+                retStatus = LCD_WriteByte(displayedChar >> ALL_BITS);
+                if (LCD_OK == retStatus){
+
+                    retStatus = LCD_GenerateEnablePulse();
+                    if (LCD_OK == retStatus){
+                        retStatus = LCD_OK; /* All operations successful */
+                    }else{
+                        // retStatus = retStatus;  /* Preserve error status */
+                    }
+                }else{
+                    // retStatus = retStatus;  /* Preserve error status */
+                }
+            }else{
+                retStatus = LCD_WRONG_BIT_OPERATION;
             }
         }
+        if (LCD_OK == retStatus){
+            /* Update column position (auto-increment after write) */
+            LCD_CurrentCol++;
+            
+            /* Handle line wrap for 16-column LCD */
+            if (LCD_CurrentCol >= COLUMN_LENGTH){
+                LCD_CurrentCol = 0;  /* Reset column to start */
+                
+                /* Move to next line */
+                if (LCD_CurrentRow == 0){
+                    LCD_CurrentRow = 1;  /* Move from row 0 to row 1 */
+                }else{
+                    LCD_CurrentRow = 0;  /* Wrap from row 1 to row 0 */
+                }
+                /* Update LCD cursor position after wrap */
+                retStatus = LCD_enuSyncSetCursorPosition(LCD_CurrentRow,LCD_CurrentCol);
+            }
+        }else{
+            // retStatus = retStatus;  /* Preserve error status */
+        }
+        
     }
     
     return retStatus;  /* Single exit point - MISRA C compliant */
@@ -465,10 +652,47 @@ LCD_Status_t LCD_enuWriteCharacter(uint8_t displayedChar)
  * @return LCD_Status_t: Operation status
  * @note Execution time: ~1.64ms
  */
-LCD_Status_t LCD_enuReturnHome(){
+LCD_Status_t LCD_enuSyncReturnHome(){
 
-    LCD_Status_t retStatus =LCD_WriteCommand(RETURN_HOME_COMMAND);  /* Return Home command (0x02) */
-    return retStatus;  /* Single exit point */
+    LCD_Status_t retStatus = LCD_NOT_OK;
+    if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+        retStatus = LCD_WriteCommand(RETURN_HOME_COMMAND>>HIGH_NIBBLE);  /* Return Home command high nibble */
+        if (LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = LCD_WriteCommand(RETURN_HOME_COMMAND>>LOW_NIBBLE);  /* Return Home command low nibble */
+                if (LCD_OK == retStatus){
+                    retStatus = LCD_GenerateEnablePulse();
+                    if (LCD_OK == retStatus){
+                        retStatus = LCD_OK; /* All operations successful */
+                    }else{
+                        // retStatus = retStatus;  /* Preserve error status */
+                    }
+                }else{
+                    // retStatus = retStatus;  /* Preserve error status */
+                }
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */
+            }
+        }else{
+            // retStatus = retStatus;  /* Preserve error status */
+        }
+    }else if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+        retStatus = LCD_WriteCommand(RETURN_HOME_COMMAND>>ALL_BITS);  /* Return Home command */
+        if (LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = LCD_OK; /* All operations successful */
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */  
+            }
+        }else{
+            // retStatus = retStatus;  /* Preserve error status */
+        }
+    }else{
+        retStatus = LCD_WRONG_BIT_OPERATION;
+    }
+    return retStatus;  /* Single exit point - MISRA C compliant */
 }
 
 /**
@@ -480,10 +704,53 @@ LCD_Status_t LCD_enuReturnHome(){
  * @return LCD_Status_t: Operation status
  * @note Execution time: ~1.64ms
  */
-LCD_Status_t LCD_enuClearDisplay(){
+static LCD_Status_t ClearDisplay(Bits_t bits){
 
-    LCD_Status_t retStatus =LCD_WriteCommand(CLEAR_DISPLAY_COMMAND);  /* Clear Display command (0x01) */
+    LCD_Status_t retStatus =LCD_WriteCommand(CLEAR_DISPLAY_COMMAND>>bits);  /* Clear Display command (0x01) */
     return retStatus;  /* Single exit point */
+}
+
+LCD_Status_t LCD_enuSyncClearDisplay(){
+    LCD_Status_t retStatus = LCD_NOT_OK;
+
+    if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+        retStatus = ClearDisplay(HIGH_NIBBLE);
+        if (LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = ClearDisplay(LOW_NIBBLE);
+                if (LCD_OK == retStatus){
+                    retStatus = LCD_GenerateEnablePulse();
+                    if (LCD_OK == retStatus){
+                        retStatus = LCD_OK; /* All operations successful */
+                    }else{
+                        // retStatus = retStatus;  /* Preserve error status */
+                    }
+                }else{
+                    // retStatus = retStatus;  /* Preserve error status */
+                }
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */
+            }
+        }else{
+            // return retStatus;  /* Exit on error */
+        }
+    }else if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+        retStatus = ClearDisplay(ALL_BITS);
+        if (LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = LCD_OK; /* All operations successful */
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */  
+            }
+        }else{
+            // retStatus = retStatus;  /* Preserve error status */
+        }
+    }else{
+        retStatus = LCD_WRONG_BIT_OPERATION;
+    }
+    return retStatus;  /* Single exit point - MISRA C compliant */
 }
 
 /**
@@ -494,7 +761,7 @@ LCD_Status_t LCD_enuClearDisplay(){
  * @return LCD_Status_t: Operation status
  * @note Updates global configuration and sends Display Control command
  */
-LCD_Status_t LCD_enuSetCursor(LCD_Cursor_t cursorState)
+LCD_Status_t LCD_enuSyncSetCursor(LCD_Cursor_t cursorState)
 {
     LCD_Status_t retStatus = LCD_NOT_OK;
     
@@ -506,9 +773,45 @@ LCD_Status_t LCD_enuSetCursor(LCD_Cursor_t cursorState)
         LcdCong.Blink = LCD_BLINK_OFF;
     }
     
-    /* Send Display Control command with updated settings */
-    retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink);
-
+    if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+        /* Send Display Control command in 4-bit mode */
+        retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,HIGH_NIBBLE);
+        if (LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,LOW_NIBBLE);
+                if (LCD_OK == retStatus){
+                    retStatus = LCD_GenerateEnablePulse();
+                    if (LCD_OK == retStatus){
+                        retStatus = LCD_OK; /* All operations successful */
+                    }else{
+                        // retStatus = retStatus;  /* Preserve error status */
+                    }
+                }else{
+                    // retStatus = retStatus;  /* Preserve error status */
+                }
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */
+            }
+        }else{
+            // return retStatus;  /* Exit on error */
+        }
+    }else if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+        /* Send Display Control command with updated settings */
+        retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,ALL_BITS);
+        if( LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = LCD_OK; /* All operations successful */
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */  
+            }
+        }else{
+            // retStatus = retStatus;  /* Preserve error status */
+        }
+    }else{
+        retStatus = LCD_WRONG_BIT_OPERATION;
+    }
     return retStatus;  /* Single exit point - MISRA C compliant */
 }
 
@@ -520,16 +823,52 @@ LCD_Status_t LCD_enuSetCursor(LCD_Cursor_t cursorState)
  * @note Updates global configuration and sends Display Control command
  *       Blink only visible when cursor is ON
  */
-LCD_Status_t LCD_enuSetBlink(LCD_Blink_t blinkState)
+LCD_Status_t LCD_enuSyncSetBlink(LCD_Blink_t blinkState)
 {
     LCD_Status_t retStatus = LCD_NOT_OK;
     
     /* Update configuration with new blink state */
     LcdCong.Blink = blinkState;
-    
-    /* Send Display Control command with updated settings */
-    retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink);
 
+    if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+        /* Send Display Control command in 4-bit mode */
+        retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,HIGH_NIBBLE);
+        if (LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,LOW_NIBBLE);
+                if (LCD_OK == retStatus){
+                    retStatus = LCD_GenerateEnablePulse();
+                    if (LCD_OK == retStatus){
+                        retStatus = LCD_OK; /* All operations successful */
+                    }else{
+                        // retStatus = retStatus;  /* Preserve error status */
+                    }
+                }else{
+                    // retStatus = retStatus;  /* Preserve error status */
+                }
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */
+            }
+        }else{
+            // return retStatus;  /* Exit on error */
+        }
+    }else if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+        /* Send Display Control command with updated settings */
+        retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,ALL_BITS);
+        if( LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = LCD_OK; /* All operations successful */
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */  
+            }
+        }else{
+            // retStatus = retStatus;  /* Preserve error status */
+        }
+    }else{
+        retStatus = LCD_WRONG_BIT_OPERATION;    
+    }
     return retStatus;  /* Single exit point - MISRA C compliant */
 }
 
@@ -543,15 +882,53 @@ LCD_Status_t LCD_enuSetBlink(LCD_Blink_t blinkState)
  * @note Updates global configuration and sends Display Control command
  *       Display data is retained when turned OFF
  */
-LCD_Status_t LCD_enuSetDisplay(LCD_Display_t displayState)
+LCD_Status_t LCD_enuSyncSetDisplay(LCD_Display_t displayState)
 {
     LCD_Status_t retStatus = LCD_NOT_OK;
     
     /* Update configuration with new display state */
     LcdCong.Display = displayState;
     
-    /* Send Display Control command with updated settings */
-    retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink);
+
+    if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+        /* Send Display Control command in 4-bit mode */
+        retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,HIGH_NIBBLE);
+        if (LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,LOW_NIBBLE);
+                if (LCD_OK == retStatus){
+                    retStatus = LCD_GenerateEnablePulse();
+                    if (LCD_OK == retStatus){
+                        retStatus = LCD_OK; /* All operations successful */
+                    }else{
+                        // retStatus = retStatus;  /* Preserve error status */
+                    }
+                }else{
+                    // retStatus = retStatus;  /* Preserve error status */
+                }
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */
+            }
+        }else{
+            // return retStatus;  /* Exit on error */
+        }
+    }else if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+        /* Send Display Control command with updated settings */
+        retStatus = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,ALL_BITS);
+        if( LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = LCD_OK; /* All operations successful */
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */  
+            }
+        }else{
+            // retStatus = retStatus;  /* Preserve error status */
+        }
+    }else{
+        retStatus = LCD_WRONG_BIT_OPERATION;    
+    }
 
     return retStatus;  /* Single exit point - MISRA C compliant */
 }
@@ -568,12 +945,13 @@ LCD_Status_t LCD_enuSetDisplay(LCD_Display_t displayState)
  * @return LCD_Status_t: Operation status
  * @note This command can only be sent when LCD is in 8-bit mode
  */
-static LCD_Status_t FunctionSet(LCD_BitOperation_t bitOperation, LCD_LineDisplay_t LineDisplay,LCD_FontSize_t FontSize){
+static LCD_Status_t FunctionSet(LCD_BitOperation_t bitOperation, LCD_LineDisplay_t LineDisplay,LCD_FontSize_t FontSize,Bits_t bits){
     uint8_t command =0;  /* Command byte to build */
     
     /* Build Function Set command: 0b00100000 | DL | N | F */
     command |= ((FUNCTION_SET_MASK)|(FontSize<<FONT_BIT_POSITION)|((LineDisplay<<LINEDISPLAY_BIT_POSITION))|(bitOperation<<BITOPEARATION_BIT_POSITION));
     
+    command = command >> bits;
     /* Send command to LCD */
     LCD_Status_t retStatus = LCD_WriteCommand(command);
     return retStatus;  /* Single exit point */
@@ -591,12 +969,13 @@ static LCD_Status_t FunctionSet(LCD_BitOperation_t bitOperation, LCD_LineDisplay
  * @return LCD_Status_t: Operation status
  * @note Controls visibility of display, cursor, and cursor blink
  */
-static LCD_Status_t DisplayControl(LCD_Display_t Display,LCD_Cursor_t Cursor,LCD_Blink_t Blink){
+static LCD_Status_t DisplayControl(LCD_Display_t Display,LCD_Cursor_t Cursor,LCD_Blink_t Blink,Bits_t bits){
     uint8_t command =0;  /* Command byte to build */
     
     /* Build Display Control command: 0b00001000 | D | C | B */
     command |=(DISPLAY_CONTROL_MASK)|((Display)<<DISPLAY_BIT_POSITION)|((Cursor<<CURSOR_BIT_POSITION)|(Blink));
     
+    command = command >> bits;
     /* Send command to LCD */
     LCD_Status_t retStatus = LCD_WriteCommand(command);
     return retStatus;  /* Single exit point */
@@ -612,35 +991,15 @@ static LCD_Status_t DisplayControl(LCD_Display_t Display,LCD_Cursor_t Cursor,LCD
  * @return LCD_Status_t: Operation status
  * @note Controls cursor movement direction and auto-shift behavior
  */
-static LCD_Status_t EnteryModeSet(LCD_DisplayShift_t DisplayShiftOperation,LCD_IncDec_t IncrementStatus){
+static LCD_Status_t EnteryModeSet(LCD_DisplayShift_t DisplayShiftOperation,LCD_IncDec_t IncrementStatus,Bits_t bits){
     uint8_t command =0;  /* Command byte to build */
     
     /* Build Entry Mode Set command: 0b00000100 | I/D | S */
     command |=(ENTRY_MODE_MASK)|((IncrementStatus)<<INCREMENT_BIT_POSITION)|(DisplayShiftOperation);
     
+    command = command >> bits;
     /* Send command to LCD */
     LCD_Status_t retStatus = LCD_WriteCommand(command);
-    return retStatus;  /* Single exit point */
-}
-
-/**
- * @brief Set LCD bit operation mode (8-bit or 4-bit)
- * @details Updates configuration and sends Function Set command
- * @param bitOperation: LCD_8_BIT_OPERATION or LCD_4_BIT_OPERATION
- * @return LCD_Status_t: Operation status
- * @warning Changing bit mode requires re-initialization
- * @note Updates global configuration LcdCong.BitOperation
- */
-LCD_Status_t LCD_enuSetBitOperation(LCD_BitOperation_t bitOperation)
-{
-    LCD_Status_t retStatus = LCD_NOT_OK;
-    
-    /* Update configuration with new bit operation mode */
-    LcdCong.BitOperation = bitOperation;
-    
-    /* Send Function Set command with updated configuration */
-    retStatus = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize);
-    
     return retStatus;  /* Single exit point */
 }
 
@@ -652,16 +1011,53 @@ LCD_Status_t LCD_enuSetBitOperation(LCD_BitOperation_t bitOperation)
  * @note Updates global configuration LcdCong.LineDisplay
  *       Most 16x2 LCDs require 2-line mode
  */
-LCD_Status_t LCD_enuSetLineDisplay(LCD_LineDisplay_t LineDisplay)
+LCD_Status_t LCD_enuSyncSetLineDisplay(LCD_LineDisplay_t LineDisplay)
 {
     LCD_Status_t retStatus = LCD_NOT_OK;
     
     /* Update configuration with new line display mode */
     LcdCong.LineDisplay = LineDisplay;
     
-    /* Send Function Set command with updated configuration */
-    retStatus = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize);
-    
+
+    if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+        /* Send Function Set command in 4-bit mode */
+        retStatus = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,HIGH_NIBBLE);
+        if (LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,LOW_NIBBLE);
+                if (LCD_OK == retStatus){
+                    retStatus = LCD_GenerateEnablePulse();
+                    if (LCD_OK == retStatus){
+                        retStatus = LCD_OK; /* All operations successful */
+                    }else{
+                        // retStatus = retStatus;  /* Preserve error status */
+                    }
+                }else{
+                    // retStatus = retStatus;  /* Preserve error status */
+                }
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */
+            }
+        }else{
+            // return retStatus;  /* Exit on error */
+        }
+    }else if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+        /* Send Function Set command with updated configuration */
+        retStatus = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,ALL_BITS);
+        if( LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = LCD_OK; /* All operations successful */
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */  
+            }
+        }else{
+            // retStatus = retStatus;  /* Preserve error status */
+        }
+    }else{
+        retStatus = LCD_WRONG_BIT_OPERATION;    
+    }
     return retStatus;  /* Single exit point */
 }
 
@@ -675,16 +1071,53 @@ LCD_Status_t LCD_enuSetLineDisplay(LCD_LineDisplay_t LineDisplay)
  * @note Updates global configuration LcdCong.FontSize
  *       5x10 font only available in 1-line mode
  */
-LCD_Status_t LCD_enuSetFontSize(LCD_FontSize_t FontSize)
+LCD_Status_t LCD_enuSyncSetFontSize(LCD_FontSize_t FontSize)
 {
     LCD_Status_t retStatus = LCD_NOT_OK;    
 
     /* Update configuration with new font size */
     LcdCong.FontSize = FontSize;
+
+    if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+        /* Send Function Set command in 4-bit mode */
+        retStatus = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,HIGH_NIBBLE);
+        if (LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,LOW_NIBBLE);
+                if (LCD_OK == retStatus){
+                    retStatus = LCD_GenerateEnablePulse();
+                    if (LCD_OK == retStatus){
+                        retStatus = LCD_OK; /* All operations successful */
+                    }else{
+                        // retStatus = retStatus;  /* Preserve error status */
+                    }
+                }else{
+                    // retStatus = retStatus;  /* Preserve error status */
+                }
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */
+            }
+        }else{
+            // return retStatus;  /* Exit on error */
+        }
+    }else if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
     
-    /* Send Function Set command with updated configuration */
-    retStatus = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize);
-        
+        /* Send Function Set command with updated configuration */
+        retStatus = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,ALL_BITS);
+        if( LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = LCD_OK; /* All operations successful */
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */  
+            }
+        }else{
+            // retStatus = retStatus;  /* Preserve error status */
+        }
+    }else{
+        retStatus = LCD_WRONG_BIT_OPERATION;    
+    }
     return retStatus;  /* Single exit point */
 }
 
@@ -698,16 +1131,53 @@ LCD_Status_t LCD_enuSetFontSize(LCD_FontSize_t FontSize)
  * @note Updates global configuration LcdCong.DisplayShiftOperation
  *       Used for scrolling text effects
  */
-LCD_Status_t LCD_enuDisplayShift(LCD_DisplayShift_t displayShift){
+LCD_Status_t LCD_enuSyncDisplayShift(LCD_DisplayShift_t displayShift){
 
     LCD_Status_t retStatus = LCD_NOT_OK;    
 
     /* Update configuration with new display shift mode */
     LcdCong.DisplayShiftOperation = displayShift;
+
+    if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+        /* Send Entry Mode Set command in 4-bit mode */
+        retStatus = EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus,HIGH_NIBBLE);
+        if (LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus,LOW_NIBBLE);
+                if (LCD_OK == retStatus){
+                    retStatus = LCD_GenerateEnablePulse();
+                    if (LCD_OK == retStatus){
+                        retStatus = LCD_OK; /* All operations successful */
+                    }else{
+                        // retStatus = retStatus;  /* Preserve error status */
+                    }
+                }else{
+                    // retStatus = retStatus;  /* Preserve error status */
+                }
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */
+            }
+        }else{
+            // return retStatus;  /* Exit on error */
+        }
+    }else if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
     
-    /* Send Entry Mode Set command with updated configuration */
-    retStatus =EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus);
-        
+        /* Send Entry Mode Set command with updated configuration */
+        retStatus =EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus,ALL_BITS);
+        if( LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = LCD_OK; /* All operations successful */
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */  
+            }
+        }else{
+            // retStatus = retStatus;  /* Preserve error status */
+        }
+    }else{
+        retStatus = LCD_WRONG_BIT_OPERATION;    
+    }  
     return retStatus;  /* Single exit point */
 }
 
@@ -721,16 +1191,53 @@ LCD_Status_t LCD_enuDisplayShift(LCD_DisplayShift_t displayShift){
  * @note Updates global configuration LcdCong.IncrementStatus
  *       Affects cursor address counter behavior
  */
-LCD_Status_t LCD_enuSetIncrementDecrementMode(LCD_IncDec_t incrementDecrement){
+LCD_Status_t LCD_enuSyncSetIncrementDecrementMode(LCD_IncDec_t incrementDecrement){
 
     LCD_Status_t retStatus = LCD_NOT_OK;    
 
     /* Update configuration with new increment/decrement mode */
     LcdCong.IncrementStatus = incrementDecrement;
+
+    if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+        /* Send Entry Mode Set command in 4-bit mode */
+        retStatus = EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus,HIGH_NIBBLE);
+        if (LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus,LOW_NIBBLE);
+                if (LCD_OK == retStatus){
+                    retStatus = LCD_GenerateEnablePulse();
+                    if (LCD_OK == retStatus){
+                        retStatus = LCD_OK; /* All operations successful */
+                    }else{
+                        // retStatus = retStatus;  /* Preserve error status */
+                    }
+                }else{
+                    // retStatus = retStatus;  /* Preserve error status */
+                }
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */
+            }
+        }else{
+            // return retStatus;  /* Exit on error */
+        }
+    }else if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
     
-    /* Send Entry Mode Set command with updated configuration */
-    retStatus =EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus);
-        
+        /* Send Entry Mode Set command with updated configuration */
+        retStatus =EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus,ALL_BITS);
+        if( LCD_OK == retStatus){
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK == retStatus){
+                retStatus = LCD_OK; /* All operations successful */
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */  
+            }
+        }else{
+            // retStatus = retStatus;  /* Preserve error status */
+        }
+    }else{
+        retStatus = LCD_WRONG_BIT_OPERATION;    
+    } 
     return retStatus;  /* Single exit point */
 }
 
@@ -745,7 +1252,7 @@ LCD_Status_t LCD_enuSetIncrementDecrementMode(LCD_IncDec_t incrementDecrement){
  * @note After setting CGRAM address, write 8 bytes to define character
  *       Character locations: 0-7 (location × 8 = start address)
  */
-static LCD_Status_t LCD_enuSetCGRAMAddress(uint8_t address)
+static LCD_Status_t LCD_enuSetCGRAMAddress(uint8_t address,Bits_t bits)
 {
     LCD_Status_t retStatus = LCD_NOT_OK;
     uint8_t command = 0;  /* Command byte to build */
@@ -756,6 +1263,7 @@ static LCD_Status_t LCD_enuSetCGRAMAddress(uint8_t address)
     /* Build Set CGRAM Address command: 0b01000000 | address */
     command |= ((CGRAM_ADDRESS_MASK) | (address));
     
+    command = command >> bits;  /* Shift command based on bit operation */
     /* Send command to LCD */
     retStatus = LCD_WriteCommand(command);
     
@@ -774,7 +1282,7 @@ static LCD_Status_t LCD_enuSetCGRAMAddress(uint8_t address)
  * @note This is used internally by LCD_enuSetCursorPosition()
  *       Updates cursor position tracking variables
  */
-static LCD_Status_t LCD_enuSetDDRAMAddress(uint8_t address)
+static LCD_Status_t LCD_enuSetDDRAMAddress(uint8_t address,Bits_t bits)
 {
     LCD_Status_t retStatus = LCD_NOT_OK;
     uint8_t command = 0;  /* Command byte to build */
@@ -784,6 +1292,8 @@ static LCD_Status_t LCD_enuSetDDRAMAddress(uint8_t address)
     
     /* Build Set DDRAM Address command: 0b10000000 | address */
     command |= ((DDRAM_ADDRESS_MASK) | (address));
+
+    command = command >> bits;  /* Shift command based on bit operation */
     
     /* Send command to LCD */
     retStatus = LCD_WriteCommand(command);
@@ -805,7 +1315,7 @@ static LCD_Status_t LCD_enuSetDDRAMAddress(uint8_t address)
  * @note Updates LCD_CurrentRow and LCD_CurrentCol tracking variables
  *       Only supports 2-line LCD displays (16 columns max)
  */
-LCD_Status_t LCD_enuSetCursorPosition(uint8_t row, uint8_t col)
+LCD_Status_t LCD_enuSyncSetCursorPosition(uint8_t row, uint8_t col)
 {
     LCD_Status_t retStatus = LCD_NOT_OK;
     uint8_t address = 0;  /* DDRAM address to calculate */
@@ -817,16 +1327,43 @@ LCD_Status_t LCD_enuSetCursorPosition(uint8_t row, uint8_t col)
         /* Calculate DDRAM address based on row */
         if (row == 0){
             address = ROW_0_OFFSET + col;  /* First line: 0x00-0x0F */
-            retStatus = LCD_enuSetDDRAMAddress(address);  /* Set DDRAM address */
             LCD_CurrentRow = row;  /* Update row tracking */
             LCD_CurrentCol = col;  /* Update column tracking */
         }else if (row == 1){
             address = ROW_1_OFFSET + col;  /* Second line: 0x40-0x4F */
-            retStatus = LCD_enuSetDDRAMAddress(address);  /* Set DDRAM address */
             LCD_CurrentRow = row;  /* Update row tracking */
             LCD_CurrentCol = col;  /* Update column tracking */
         }else{
             retStatus = LCD_WRONG_ROW;  /* Row out of range (only 0 or 1 valid) */
+        }
+        if(LCD_WRONG_ROW != retStatus){
+            if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+                retStatus = LCD_enuSetDDRAMAddress(address,ALL_BITS);  /* Set DDRAM address */
+                if(retStatus == LCD_OK){
+                    retStatus = LCD_GenerateEnablePulse();
+                }else{
+                    //retStatus = retStatus
+                }
+            }else{
+                retStatus = LCD_enuSetDDRAMAddress(address,HIGH_NIBBLE);  /* Set DDRAM address */
+                if(retStatus == LCD_OK){
+                    retStatus = LCD_GenerateEnablePulse();
+                    if (LCD_OK == retStatus){
+                        retStatus = LCD_enuSetDDRAMAddress(address,LOW_NIBBLE);  /* Set DDRAM address */    
+                        if(retStatus == LCD_OK){
+                        retStatus = LCD_GenerateEnablePulse();
+                        }else{
+                            //retStatus = retStatus
+                        }
+                    }else{
+                        //retStatus = retStatus
+                    }
+                }else{
+                    //retStatus = retStatus
+                }
+
+            }
+                
         }
     }
     
@@ -852,7 +1389,7 @@ LCD_Status_t LCD_enuSetCursorPosition(uint8_t row, uint8_t col)
  * @note After creating character, cursor returns to previous position
  *       Custom characters are displayed using codes 0-7
  */
-LCD_Status_t LCD_enuCreateCustomChar(uint8_t location, const uint8_t charmap[SPECIAL_CHAR_LENGHT])
+LCD_Status_t LCD_enuSyncCreateCustomChar(uint8_t location, const uint8_t charmap[SPECIAL_CHAR_LENGHT])
 {
     LCD_Status_t retStatus = LCD_NOT_OK;
     
@@ -864,8 +1401,40 @@ LCD_Status_t LCD_enuCreateCustomChar(uint8_t location, const uint8_t charmap[SPE
     }else{
         /* Set CGRAM address (location * 8) */
         /* Each character uses 8 bytes, so multiply location by 8 */
-        retStatus = LCD_enuSetCGRAMAddress((location<<3));
-        
+        if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+            retStatus = LCD_enuSetCGRAMAddress((location<<3),ALL_BITS);
+            if(LCD_OK == retStatus){
+                retStatus = LCD_GenerateEnablePulse();
+                if( LCD_OK == retStatus){
+                    retStatus = LCD_OK; /* All operations successful */
+                }else{
+                    // retStatus = retStatus;  /* Preserve error status */  
+                }
+            }else{
+                // retStatus = retStatus;  /* Preserve error status */
+            }
+        }else {
+            if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+                retStatus = LCD_enuSetCGRAMAddress((location<<3),HIGH_NIBBLE);
+                if(retStatus == LCD_OK){
+                    retStatus = LCD_GenerateEnablePulse();
+                    if( LCD_OK == retStatus){
+                        retStatus = LCD_enuSetCGRAMAddress((location<<3),LOW_NIBBLE);
+                        if(retStatus == LCD_OK){
+                            retStatus = LCD_GenerateEnablePulse();
+                        }else{
+                            // retStatus = retStatus;  /* Preserve error status */
+                        }
+                    }else{
+                        // retStatus = retStatus;  /* Preserve error status */
+                    }
+                }else{
+                    // retStatus = retStatus;  /* Preserve error status */  
+                }
+            }else{
+                retStatus = LCD_WRONG_BIT_OPERATION;
+            }
+        }
         if (LCD_OK == retStatus){
             GPIO_Status_t gpioStatus = GPIO_NOT_OK;  /* GPIO operation status */
             
@@ -888,17 +1457,40 @@ LCD_Status_t LCD_enuCreateCustomChar(uint8_t location, const uint8_t charmap[SPE
                     if (GPIO_OK != gpioStatus){
                         retStatus = LCD_GPIO_ERROR;  /* GPIO operation failed */
                     }else{
-                        /* Write character pattern byte to CGRAM */
-                        retStatus = LCD_WriteByte(charmap[i]);
-                        if (LCD_OK != retStatus){
-                            retStatus = LCD_ERROR_SPECIALCHAR;  /* Character write failed */
+                        if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+                            retStatus = LCD_WriteByte(charmap[i] >> HIGH_NIBBLE);
+                            if (LCD_OK == retStatus){
+                                retStatus = LCD_GenerateEnablePulse();
+                                if (LCD_OK == retStatus){
+                                    retStatus = LCD_WriteByte(charmap[i] >> LOW_NIBBLE);
+                                    if (LCD_OK == retStatus){
+                                        retStatus = LCD_GenerateEnablePulse();
+                                    }else{
+                                        retStatus = LCD_ERROR_SPECIALCHAR;  /* Character write failed */
+                                    }
+                                }else{
+                                    retStatus = LCD_ERROR_SPECIALCHAR;  /* Character write failed */
+                                }
+                            }else{
+                                retStatus = LCD_ERROR_SPECIALCHAR;  /* Character write failed */
+                            }
+                        }else if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+                            /* Write character pattern byte to CGRAM */
+                            retStatus = LCD_WriteByte(charmap[i]);
+                            if (LCD_OK == retStatus){
+                                retStatus = LCD_GenerateEnablePulse();
+                            }else{
+                                retStatus = LCD_ERROR_SPECIALCHAR;  /* Character write failed */
+                            }
+                        }else{
+                            retStatus = LCD_WRONG_BIT_OPERATION;
                         }
                     }
                 }
             }
             
             /* Return cursor to previous position (back to DDRAM mode) */
-            retStatus = LCD_enuSetCursorPosition(LCD_CurrentRow,LCD_CurrentCol);            
+            retStatus = LCD_enuSyncSetCursorPosition(LCD_CurrentRow,LCD_CurrentCol);            
         }
     }
     
@@ -917,7 +1509,7 @@ LCD_Status_t LCD_enuCreateCustomChar(uint8_t location, const uint8_t charmap[SPE
  * @note The custom character must exist in CGRAM before calling this
  *       Cursor advances automatically after displaying character
  */
-LCD_Status_t LCD_enuWriteCustomChar(uint8_t location)
+LCD_Status_t LCD_enuSyncWriteCustomChar(uint8_t location)
 {
     LCD_Status_t retStatus = LCD_NOT_OK;
     
@@ -926,12 +1518,1011 @@ LCD_Status_t LCD_enuWriteCustomChar(uint8_t location)
         retStatus = LCD_WRONG_LOCATION;  /* Invalid custom character location */
     }else{
         /* Write character code (0-7) to display custom character */
-        retStatus = LCD_enuWriteCharacter((location));
+        retStatus = LCD_enuSyncWriteCharacter((location));
     }
     
     return retStatus;  /* Single exit point */
 }
 
+/**
+ * @brief Generate enable pulse for LCD (HIGH -> LOW transition)
+ * @details Creates falling edge on EN pin to latch data into LCD
+ *          Timing: EN high for 1ms, then low with 1ms delay
+ * @return LCD_Status_t:
+ *         - LCD_OK: Pulse generated successfully
+ *         - LCD_GPIO_ERROR: GPIO operation failed
+ *         - LCD_TIMER_ERROR: Timer operation failed
+ * @note Minimum EN pulse width: >450ns (we use 1ms for safety)
+ *       This function is called by LCD_WriteByte() after data is set
+ */
+static LCD_Status_t LCD_GenerateEnablePulse(void)
+{
+    LCD_Status_t retStatus = LCD_NOT_OK;    /* Function return status */
+    GPIO_Status_t gpioStatus = GPIO_NOT_OK; /* GPIO operation status */
+    
+    /* Set EN pin HIGH to start pulse */
+    gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+    
+    if (GPIO_OK != gpioStatus){
+        retStatus = LCD_GPIO_ERROR;  /* Failed to set EN high */
+    }else{
+        SYSTICK_Status_t systickStat = SYSTICK_NOT_OK;  /* Timer status */
+        
+        /* Wait for enable pulse width (>450ns required, using 1ms) */
+        systickStat = SYSTICK_Wait_ms(1);
+        
+        if (SYSTICK_OK != systickStat){
+            retStatus = LCD_TIMER_ERROR;  /* Timer delay failed */
+        }else{
+            /* Set EN pin LOW to latch data into LCD (falling edge) */
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            
+            if (GPIO_OK != gpioStatus){
+                retStatus = LCD_GPIO_ERROR;  /* Failed to set EN low */
+            }else{
+                /* Wait for command execution time */
+                systickStat = SYSTICK_Wait_ms(1);
+                
+                if (SYSTICK_OK != systickStat){
+                    retStatus = LCD_TIMER_ERROR;  /* Timer delay failed */
+                }else{
+                    retStatus = LCD_OK;  /* All operations successful */
+                }
+            }
+        }
+    }
+    
+    return retStatus;  /* Single exit point - MISRA C compliant */
+}
+
 /******************************************************************************
  * END OF FILE
  ******************************************************************************/
+
+
+
+/* Initialization */
+LCD_Status_t LCD_enuAsynInit(){
+
+    LCD_Status_t retStatus = LCD_NOT_OK;
+    
+    /* Reset all static variables to ensure clean state */
+    // NumberOfFunctionSetCalls = 0;
+    // startSeq = 0;
+    // iterator = 0;
+    // customCharIterator = 0;
+    LCD_CurrentRow = 0;
+    LCD_CurrentCol = 0;
+    
+    retStatus = LCD_enuInitGpioPins();
+    if(LCD_OK!=retStatus){
+        retStatus = LCD_FAILED_TO_INIT;
+    }else{
+        SCHED_Status_t schedStat = SCHED_enuRegisterRunnable(&lcdRunnable);
+
+        if(SCHED_OK!=schedStat){
+            retStatus = LCD_FAILED_TO_INIT;
+        }else{
+            Queue_Init();
+            if(LCD_4_BIT_OPERATION == LcdCong.BitOperation){
+                // initSeq   = INIT_4BIT_HIGH_NIBBLE_FUNCTION_SET_HIGH;
+                initSeq   = INIT_4BIT_HIGH_NIBBLE_START_SEQUANCE_HIGH;
+                lcdState  = LCD_INIT;
+                retStatus = LCD_OK;
+            }else{
+                if(LCD_8_BIT_OPERATION == LcdCong.BitOperation){
+                    // initSeq   = INIT_8BIT_FUNCTION_SET_HIGH;
+                    initSeq   = INIT_8BIT_START_SEQUANCE_HIGH;
+                    lcdState  = LCD_INIT;
+                    retStatus = LCD_OK;
+                }else{
+                    retStatus = LCD_WRONG_BIT_OPERATION;    
+                }
+            }
+        }
+    }
+
+    return retStatus;
+}
+
+
+LCD_Status_t LCD_enuAsynWriteString(uint8_t* displayedString){
+    LCD_Status_t retStatus = LCD_NOT_OK;
+    if(NULL == displayedString){
+        retStatus = LCD_NULL_PTR;
+    }else{
+
+        if(LCD_NO_ACTION!=lcdState){
+            retStatus = LCD_BUSY;
+        }else{
+            if(INIT_FAILED == initSeq){
+                retStatus = LCD_NOT_INITIALIZED;
+            }else{
+                LCD_DataBuffer_t lcdBuffer = {
+                    .row = LCD_CurrentRow,
+                    .col = LCD_CurrentCol,
+                };
+                strcpy((char*)lcdBuffer.buff, (char *)displayedString);
+                Queue_Push(&lcdBuffer);
+
+                if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+                    writeStringSeq = WRITE_STRING_4_BIT_HIGH_NIBBLE_HIGH;
+                }else{
+                    writeStringSeq = WRITE_STRING_8_BIT_HIGH;
+                }
+                lcdState = LCD_WRITE_STRING;
+                retStatus = LCD_OK;
+            }
+        }
+    }
+    return retStatus;
+}
+
+
+LCD_Status_t LCD_enuAsynWriteStringAtPosition(uint8_t* displayedString, uint8_t row, uint8_t col){
+    LCD_Status_t retStatus = LCD_NOT_OK;
+    if(NULL == displayedString){
+        retStatus = LCD_NULL_PTR;
+    }else{
+
+        if(LCD_NO_ACTION!=lcdState){
+            retStatus = LCD_BUSY;
+        }else{
+            if(INIT_FAILED == initSeq){
+                retStatus = LCD_NOT_INITIALIZED;
+            }else{
+                LCD_DataBuffer_t lcdBuffer = {
+                    .row = row,
+                    .col = col,
+                };
+                strcpy((char*)lcdBuffer.buff, (char *)displayedString);
+                Queue_Push(&lcdBuffer);
+
+                if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+                    writeStringSeq = WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_HIGH;
+                }else{
+                    writeStringSeq = WRITE_STRING_8BIT_CURSOR_HIGH;
+                }
+                lcdState = LCD_WRITE_STRING;
+                retStatus = LCD_OK;
+            }
+        }
+    }
+    return retStatus;
+}
+
+typedef struct{
+    uint8_t location;
+    uint8_t charmap[SPECIAL_CHAR_LENGHT];
+}CustomCharBuffer_t;
+
+static CustomCharBuffer_t CustomCharBuffer;
+
+LCD_Status_t LCD_enuAsynCreateCustomChar(uint8_t location, const uint8_t charmap[SPECIAL_CHAR_LENGHT]){
+    LCD_Status_t retStatus = LCD_NOT_OK;
+    if (NULL == charmap){
+        retStatus = LCD_NULL_PTR;  /* NULL pointer passed */
+    }else if (location > LOCATION_MASK){
+        retStatus = LCD_WRONG_LOCATION;  /* Invalid location */
+    }else{
+        if(LCD_NO_ACTION!=lcdState){
+            retStatus = LCD_BUSY;
+        }else{
+            if(INIT_FAILED == initSeq){
+                retStatus = LCD_NOT_INITIALIZED;
+            }else{
+                CustomCharBuffer.location = location;
+                memcpy(CustomCharBuffer.charmap, charmap, SPECIAL_CHAR_LENGHT);
+                if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+                    createCustomCharSeq = CREATE_CUSTOM_CHAR_8BIT_CURSOR_HIGH;
+                }else{
+                    createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_CURSOR_HIGH;
+                }
+                lcdState = LCD_CREATE_CUSTOM_CHAR;
+                retStatus = LCD_OK;
+            }
+        }
+    }
+    return retStatus;
+}
+void static lcdRunnableCBF(){
+    switch(lcdState){
+        case LCD_INIT         : ExecuteInitSeq();break;
+        case LCD_WRITE_STRING : ExecuteWriteString();break;
+        case LCD_CREATE_CUSTOM_CHAR : ExecutCreateCustomChar();break;
+        case LCD_NO_ACTION    : /* Do nothing */ break;
+        default               : /* Do nothing */ break;
+    }
+
+}
+
+static uint8_t NumberOfFunctionSetCalls =0;
+static uint8_t startSeq = 0;
+
+void static ExecuteInitSeq(){
+    GPIO_Status_t gpioStatus;
+    LCD_Status_t retStatus;
+    switch(initSeq){
+        case INIT_8BIT_START_SEQUANCE_HIGH :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_LOW);  /* RS=0 for command */
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);   /* RW=0 for write */
+            retStatus  = LCD_WriteByte(0x30>>ALL_BITS); /* Send 0x30 to initialize */
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_8BIT_START_SEQUANCE_LOW;
+            break;
+        case INIT_8BIT_START_SEQUANCE_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            startSeq++;
+            if(startSeq < 3){
+                initSeq    = INIT_8BIT_START_SEQUANCE_HIGH;
+            }else{
+                startSeq = 0;
+                initSeq    = INIT_8BIT_FUNCTION_SET_HIGH;
+            }
+            break;
+
+        case INIT_8BIT_FUNCTION_SET_HIGH :
+            retStatus   = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,ALL_BITS);
+            gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_8BIT_FUNCTION_SET_LOW;
+            break;
+
+        case INIT_8BIT_FUNCTION_SET_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            initSeq    = INIT_8BIT_DISPLAY_ON_HIGH;
+            break;
+
+        case INIT_8BIT_DISPLAY_ON_HIGH: 
+            retStatus   = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,ALL_BITS);
+            gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_8BIT_DISPLAY_ON_LOW;
+            break;
+
+        case INIT_8BIT_DISPLAY_ON_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            initSeq    = INIT_8BIT_CLEAR_DISPLAY_HIGH;
+            break;
+
+        case INIT_8BIT_CLEAR_DISPLAY_HIGH : 
+            retStatus   = ClearDisplay( ALL_BITS);
+            gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_8BIT_CLEAR_DISPLAY_LOW;
+            break;
+
+        case INIT_8BIT_CLEAR_DISPLAY_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            initSeq    = INIT_8BIT_ENTRY_MODE_HIGH;
+            break;
+
+        case INIT_8BIT_ENTRY_MODE_HIGH : 
+            retStatus   = EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus,ALL_BITS);
+            gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_8BIT_ENTRY_MODE_LOW;
+            break;
+
+        case INIT_8BIT_ENTRY_MODE_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            initSeq    = INIT_DONE;
+            lcdState   = LCD_NO_ACTION;
+            break;
+
+        case INIT_4BIT_HIGH_NIBBLE_START_SEQUANCE_HIGH :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_LOW);  /* RS=0 for command */
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);   /* RW=0 for write */
+            retStatus  = LCD_WriteByte(0x30>>HIGH_NIBBLE);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_4BIT_HIGH_NIBBLE_START_SEQUANCE_LOW;
+            break;
+        case INIT_4BIT_HIGH_NIBBLE_START_SEQUANCE_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            startSeq++;
+            if(startSeq < 3){
+                initSeq    = INIT_4BIT_HIGH_NIBBLE_START_SEQUANCE_HIGH;
+            }else{
+                startSeq = 0;
+                initSeq    = INIT_4BIT_SWITCH_TO_4BIT_MODE_HIGH;
+            }
+            break;
+        case INIT_4BIT_SWITCH_TO_4BIT_MODE_HIGH :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_LOW);  /* RS=0 for command */
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);   /* RW=0 for write */
+            retStatus   = LCD_WriteByte(0x20>>HIGH_NIBBLE); /* Send 0x20 to switch to 4-bit mode */
+            gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_4BIT_SWITCH_TO_4BIT_MODE_LOW;
+            break;
+        case INIT_4BIT_SWITCH_TO_4BIT_MODE_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            initSeq    = INIT_4BIT_HIGH_NIBBLE_FUNCTION_SET_HIGH;
+            break;
+        case INIT_4BIT_HIGH_NIBBLE_FUNCTION_SET_HIGH :
+            retStatus   = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,HIGH_NIBBLE);
+            gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_4BIT_HIGH_NIBBLE_FUNCTION_SET_LOW;
+            break;
+        case INIT_4BIT_HIGH_NIBBLE_FUNCTION_SET_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            initSeq    = INIT_4BIT_LOW_NIBBLE_FUNCTION_SET_HIGH;
+            break;  
+        case INIT_4BIT_LOW_NIBBLE_FUNCTION_SET_HIGH :
+            retStatus   = FunctionSet(LcdCong.BitOperation,LcdCong.LineDisplay,LcdCong.FontSize,LOW_NIBBLE);
+            gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_4BIT_LOW_NIBBLE_FUNCTION_SET_LOW;
+            break;
+        case INIT_4BIT_LOW_NIBBLE_FUNCTION_SET_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            initSeq    = INIT_4BIT_HIGH_NIBBLE_DISPLAY_ON_HIGH;
+            break;
+        case INIT_4BIT_HIGH_NIBBLE_DISPLAY_ON_HIGH: 
+            retStatus   = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,HIGH_NIBBLE);
+            gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_4BIT_HIGH_NIBBLE_DISPLAY_ON_LOW;
+            break;
+        case INIT_4BIT_HIGH_NIBBLE_DISPLAY_ON_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            initSeq    = INIT_4BIT_LOW_NIBBLE_DISPLAY_ON_HIGH;
+            break;  
+        case INIT_4BIT_LOW_NIBBLE_DISPLAY_ON_HIGH: 
+            retStatus   = DisplayControl(LcdCong.Display,LcdCong.Cursor,LcdCong.Blink,LOW_NIBBLE);
+            gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_4BIT_LOW_NIBBLE_DISPLAY_ON_LOW;
+            break;
+        case INIT_4BIT_LOW_NIBBLE_DISPLAY_ON_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            initSeq    = INIT_4BIT_HIGH_NIBBLE_CLEAR_DISPLAY_HIGH;
+            break;  
+        case INIT_4BIT_HIGH_NIBBLE_CLEAR_DISPLAY_HIGH : 
+            retStatus   = ClearDisplay(HIGH_NIBBLE);
+            gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_4BIT_HIGH_NIBBLE_CLEAR_DISPLAY_LOW;
+            break;
+        case INIT_4BIT_HIGH_NIBBLE_CLEAR_DISPLAY_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            initSeq    = INIT_4BIT_LOW_NIBBLE_CLEAR_DISPLAY_HIGH;
+            break;  
+        case INIT_4BIT_LOW_NIBBLE_CLEAR_DISPLAY_HIGH : 
+            retStatus   = ClearDisplay(LOW_NIBBLE);
+            gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_4BIT_LOW_NIBBLE_CLEAR_DISPLAY_LOW;
+            break;
+        case INIT_4BIT_LOW_NIBBLE_CLEAR_DISPLAY_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            initSeq    = INIT_4BIT_HIGH_NIBBLE_ENTRY_MODE_HIGH;
+            break;  
+        case INIT_4BIT_HIGH_NIBBLE_ENTRY_MODE_HIGH : 
+            retStatus   = EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus,HIGH_NIBBLE);
+            gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_4BIT_HIGH_NIBBLE_ENTRY_MODE_LOW;
+            break;
+        case INIT_4BIT_HIGH_NIBBLE_ENTRY_MODE_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            initSeq    = INIT_4BIT_LOW_NIBBLE_ENTRY_MODE_HIGH;
+            break;  
+        case INIT_4BIT_LOW_NIBBLE_ENTRY_MODE_HIGH : 
+            retStatus   = EnteryModeSet(LcdCong.DisplayShiftOperation,LcdCong.IncrementStatus,LOW_NIBBLE);
+            gpioStatus  = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            initSeq     = INIT_4BIT_LOW_NIBBLE_ENTRY_MODE_LOW;
+            break;
+        case INIT_4BIT_LOW_NIBBLE_ENTRY_MODE_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            initSeq    = INIT_DONE;
+            lcdState   = LCD_NO_ACTION;
+            break;
+        case INIT_DONE :
+            /* Do nothing, initialization complete */
+            break;
+ 
+    }
+}
+
+static uint8_t iterator = 0;
+void static ExecuteWriteString(){
+    LCD_Status_t retstat;
+    GPIO_Status_t gpioStatus;
+    LCD_DataBuffer_t* PointerToBufferTop = Queue_Top();
+    switch(writeStringSeq){
+        case WRITE_STRING_8BIT_CURSOR_HIGH : 
+            retstat    = LCD_SetCursor_Local(PointerToBufferTop->row,PointerToBufferTop->col,ALL_BITS);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            writeStringSeq = WRITE_STRING_8BIT_CURSOR_LOW;
+            break;
+
+        case WRITE_STRING_8BIT_CURSOR_LOW : 
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if('\0' == PointerToBufferTop->buff[iterator]){
+                Queue_Pop();
+                if(Queue_IsEmpty() == true){
+                    writeStringSeq = WRITE_STRING_DONE;
+                    lcdState = LCD_NO_ACTION;
+                }else{
+                    writeStringSeq = WRITE_STRING_8BIT_CURSOR_HIGH;
+                    lcdState = LCD_WRITE_STRING;
+                }
+                iterator =0;
+            }else{
+                writeStringSeq = WRITE_STRING_8_BIT_HIGH;
+            }
+            break;
+        case WRITE_STRING_8_BIT_HIGH :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_HIGH);  /* RS=1 for data */
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);   /* RW=0 for write */
+            retstat    = LCD_WriteByte(PointerToBufferTop->buff[iterator++]);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            writeStringSeq = WRITE_STRING_8_BIT_LOW;
+            break;
+
+        case WRITE_STRING_8_BIT_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            LCD_CurrentCol++;
+                
+            /* Handle line wrap for 16-column LCD */
+            if (LCD_CurrentCol >= COLUMN_LENGTH){
+                LCD_CurrentCol = 0;  /* Reset column to start */
+                    
+                /* Move to next line */
+                if (LCD_CurrentRow == 0){
+                    LCD_CurrentRow = 1;  /* Move from row 0 to row 1 */
+                }else{
+                    LCD_CurrentRow = 0;  /* Wrap from row 1 to row 0 */
+                }
+                PointerToBufferTop->col = LCD_CurrentCol;
+                PointerToBufferTop->row = LCD_CurrentRow;
+                /* Update LCD cursor position after wrap */
+                writeStringSeq = WRITE_STRING_8BIT_CURSOR_HIGH;
+            }else{
+
+                if('\0' == PointerToBufferTop->buff[iterator]){
+                    Queue_Pop();
+                    if(Queue_IsEmpty() == true){
+                        writeStringSeq = WRITE_STRING_DONE;
+                        lcdState = LCD_NO_ACTION;
+                    }else{
+                        writeStringSeq = WRITE_STRING_8BIT_CURSOR_HIGH;
+                        lcdState = LCD_WRITE_STRING;
+                    }
+                    iterator =0;
+                }else{
+                    writeStringSeq = WRITE_STRING_8_BIT_HIGH;
+                }
+            }
+            break;
+
+        case WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_HIGH:
+            retstat    = LCD_SetCursor_Local(PointerToBufferTop->row,PointerToBufferTop->col,HIGH_NIBBLE);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            writeStringSeq = WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_LOW;
+            break;
+        case WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_LOW:
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            writeStringSeq = WRITE_STRING_4BIT_LOW_NIBBLE_CURSOR_HIGH;
+            break;
+        case WRITE_STRING_4BIT_LOW_NIBBLE_CURSOR_HIGH:
+            retstat    = LCD_SetCursor_Local(PointerToBufferTop->row,PointerToBufferTop->col,LOW_NIBBLE);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            writeStringSeq = WRITE_STRING_4BIT_LOW_NIBBLE_CURSOR_LOW;
+            break;
+        case WRITE_STRING_4BIT_LOW_NIBBLE_CURSOR_LOW:
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if('\0' == PointerToBufferTop->buff[iterator]){
+                Queue_Pop();
+                if(Queue_IsEmpty() == true){
+                    writeStringSeq = WRITE_STRING_DONE;
+                    lcdState = LCD_NO_ACTION;
+                }else{
+                    writeStringSeq = WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_HIGH;
+                    lcdState = LCD_WRITE_STRING;
+                }
+                iterator =0;
+            }else{
+                writeStringSeq = WRITE_STRING_4_BIT_HIGH_NIBBLE_HIGH;
+            }
+            break;
+
+        case WRITE_STRING_4_BIT_HIGH_NIBBLE_HIGH :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_HIGH);  /* RS=1 for data */
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);   /* RW=0 for write */
+            retstat    = LCD_WriteByte(PointerToBufferTop->buff[iterator] >> HIGH_NIBBLE);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            writeStringSeq = WRITE_STRING_4_BIT_HIGH_NIBBLE_LOW;
+            break;
+        case WRITE_STRING_4_BIT_HIGH_NIBBLE_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            writeStringSeq = WRITE_STRING_4_BIT_LOW_NIBBLE_HIGH;
+            break;  
+        case WRITE_STRING_4_BIT_LOW_NIBBLE_HIGH :
+            retstat    = LCD_WriteByte(PointerToBufferTop->buff[iterator++] >> LOW_NIBBLE);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            writeStringSeq = WRITE_STRING_4_BIT_LOW_NIBBLE_LOW;
+            break;
+        case WRITE_STRING_4_BIT_LOW_NIBBLE_LOW :
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            LCD_CurrentCol++;
+            /* Handle line wrap for 16-column LCD */
+            if (LCD_CurrentCol >= COLUMN_LENGTH){
+                LCD_CurrentCol = 0;  /* Reset column to start */
+                /* Move to next line */
+                if (LCD_CurrentRow == 0){
+                    LCD_CurrentRow = 1;  /* Move from row 0 to row 1 */
+                }else{
+                    LCD_CurrentRow = 0;  /* Wrap from row 1 to row 0 */
+                }
+                PointerToBufferTop->col = LCD_CurrentCol;
+                PointerToBufferTop->row = LCD_CurrentRow;
+                /* Update LCD cursor position after wrap */
+                writeStringSeq = WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_HIGH;
+            }else{
+                if('\0' == PointerToBufferTop->buff[iterator]){
+                    Queue_Pop();
+                    if(Queue_IsEmpty() == true){
+                        writeStringSeq = WRITE_STRING_DONE;
+                        lcdState = LCD_NO_ACTION;
+                    }else{
+                        writeStringSeq = WRITE_STRING_4BIT_HIGH_NIBBLE_CURSOR_HIGH;
+                        lcdState = LCD_WRITE_STRING;
+                    }
+                    iterator =0;
+                }else{
+                    writeStringSeq = WRITE_STRING_4_BIT_HIGH_NIBBLE_HIGH;
+                }
+            }
+
+    }
+}
+
+
+static LCD_Status_t LCD_enuInitGpioPins(){
+    LCD_Status_t retStatus = LCD_OK;                            /* Function return status */
+
+    if ((LcdCong.BitOperation != LCD_4_BIT_OPERATION)&&(LcdCong.BitOperation != LCD_8_BIT_OPERATION)){
+        retStatus = LCD_WRONG_BIT_OPERATION;  /* Invalid bit operation mode */
+    }else{
+        uint8_t totalPins = 0;
+        if(LcdCong.BitOperation == LCD_8_BIT_OPERATION){
+            totalPins = 11;  /* 8 data pins + RS + RW + EN */
+        }else{
+            totalPins = 7;   /* 4 data pins + RS + RW + EN */
+        }
+        /* Configure GPIO pin settings for LCD pins */
+        GPIO_cfg_t gpioCfg = {
+            .alternateFunction = GPIO_AF0,                      /* No alternate function */
+            .mode = GPIO_MODE_OUTPUT,                           /* Output mode for LCD control */
+            .outputType = GPIO_OUTPUT_TYPE_PUSH_PULL,          /* Push-pull output */
+            .pull = GPIO_NO_PULL,                              /* No pull-up/down resistor */
+            .speed = GPIO_SPEED_DEFAULT                        /* Default speed */
+        };
+
+        GPIO_Status_t gpioStat = GPIO_NOT_OK;                  /* GPIO operation status */
+        const LCD_PinInfo_t *ptr = &(LcdPinout.DB4);          /* Pointer to first pin (DB4) */
+
+        /* Initialize all 11 pins in sequence (DB0-DB7, RS, RW, EN) */
+        for (uint8_t i = 0; i < totalPins; i++){
+            gpioCfg.port = (ptr + i)->port;  /* Get port from pin structure */
+            gpioCfg.pin = (ptr + i)->pin;    /* Get pin number from pin structure */
+            gpioStat = GPIO_enuInit(&gpioCfg);  /* Initialize GPIO pin */
+
+            /* Check if GPIO initialization failed */
+            if (GPIO_OK != gpioStat){
+                retStatus = LCD_INIT_ERROR;  /* Set error status */
+                break;
+            }
+        }
+    }
+    return retStatus;  /* Single exit point - MISRA C compliant */
+}
+
+/**
+ * @brief Execute HD44780 initialization sequence in 4-bit mode
+ * @details Follows HD44780 datasheet initialization procedure for 4-bit operation:
+ *          1. Wait >40ms after power-up
+ *          2. Send Function Set command (high nibble then low nibble)
+ *          3. Send Display Control command (high nibble then low nibble)
+ *          4. Send Clear Display command (high nibble then low nibble)
+ *          5. Send Entry Mode Set command (high nibble then low nibble)
+ * @return LCD_Status_t: Initialization status
+ * @note This function implements proper timing as per HD44780 datasheet for 4-bit mode
+ */
+static LCD_Status_t LCD_InitSequence_4BitMode(void)
+{
+    LCD_Status_t retStatus = LCD_NOT_OK;        /* Function return status */
+    SYSTICK_Status_t systickStat = SYSTICK_NOT_OK;  /* Timer status */
+    GPIO_Status_t gpioStatus = GPIO_NOT_OK;
+    uint8_t startSeqCount = 0;
+        
+    /* Wait for LCD power-up (>40ms after Vcc rises to 4.5V) */
+    systickStat = SYSTICK_Wait_ms(40);
+    
+    if (SYSTICK_OK != systickStat){
+        retStatus = LCD_TIMER_ERROR;  /* Timer error occurred */
+    }else{
+        /* ========== HD44780 Initialization by Instruction (4-bit mode) ========== */
+        
+        /* Start Sequence: Send 0x30 three times (high nibble only) to ensure LCD is in known state */
+        for(startSeqCount = 0; startSeqCount < 3; startSeqCount++){
+            /* Set RS=0 for command, RW=0 for write */
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_LOW);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);
+            
+            /* Send 0x30 initialization command (high nibble only) */
+            retStatus = LCD_WriteByte(0x30 >> HIGH_NIBBLE);
+            if (LCD_OK != retStatus){
+                break;
+            }
+            
+            /* Generate enable pulse */
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK != retStatus){
+                break;
+            }
+            
+            /* Wait between start sequence commands */
+            systickStat = SYSTICK_Wait_ms(5);
+            if (SYSTICK_OK != systickStat){
+                retStatus = LCD_TIMER_ERROR;
+                break;
+            }
+        }
+        
+        if (LCD_OK != retStatus){
+            /* Start sequence failed */
+        }else{
+            /* Switch to 4-bit mode: Send 0x20 (high nibble only) */
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_LOW);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);
+            retStatus = LCD_WriteByte(0x20 >> HIGH_NIBBLE);
+            
+            if (LCD_OK != retStatus){
+                /* Switch to 4-bit mode failed */
+            }else{
+                retStatus = LCD_GenerateEnablePulse();
+                if (LCD_OK != retStatus){
+                    /* Enable pulse failed */
+                }else{
+                    systickStat = SYSTICK_Wait_ms(1);
+                    if (SYSTICK_OK != systickStat){
+                        retStatus = LCD_TIMER_ERROR;
+                    }else{
+                        /* Step 1: Function Set - Configure interface, lines, and font */
+                        /* Send high nibble first */
+                        retStatus = FunctionSet(LcdCong.BitOperation, LcdCong.LineDisplay, LcdCong.FontSize, HIGH_NIBBLE);
+        if (LCD_OK != retStatus){
+            retStatus = retStatus;  /* Preserve error status */
+        }else{
+            retStatus = LCD_GenerateEnablePulse();
+            if (LCD_OK != retStatus){
+                retStatus = retStatus;  /* Preserve error status */
+            }else{
+                /* Send low nibble */
+                retStatus = FunctionSet(LcdCong.BitOperation, LcdCong.LineDisplay, LcdCong.FontSize, LOW_NIBBLE);
+                if (LCD_OK != retStatus){
+                    retStatus = retStatus;  /* Preserve error status */
+                }else{
+                    retStatus = LCD_GenerateEnablePulse();
+                    if (LCD_OK != retStatus){
+                        retStatus = retStatus;  /* Preserve error status */
+                    }else{
+                        systickStat = SYSTICK_Wait_ms(1);  /* Wait >4.1ms as per datasheet */
+                        
+                        if (SYSTICK_OK != systickStat){
+                            retStatus = LCD_TIMER_ERROR;
+                        }else{
+                            /* Step 2: Display Control - Configure display, cursor, blink */
+                                    /* Send high nibble first */
+                                    retStatus = DisplayControl(LcdCong.Display, LcdCong.Cursor, LcdCong.Blink, HIGH_NIBBLE);
+                                    
+                                    if (LCD_OK != retStatus){
+                                        retStatus = retStatus;  /* Preserve error status */
+                                    }else{
+                                        retStatus = LCD_GenerateEnablePulse();
+                                        if (LCD_OK != retStatus){
+                                            retStatus = retStatus;  /* Preserve error status */
+                                        }else{
+                                            /* Send low nibble */
+                                            retStatus = DisplayControl(LcdCong.Display, LcdCong.Cursor, LcdCong.Blink, LOW_NIBBLE);
+                                            if (LCD_OK != retStatus){
+                                                retStatus = retStatus;  /* Preserve error status */
+                                            }else{
+                                                retStatus = LCD_GenerateEnablePulse();
+                                                if (LCD_OK != retStatus){
+                                                    retStatus = retStatus;  /* Preserve error status */
+                                                }else{
+                                                    systickStat = SYSTICK_Wait_ms(1);  /* Wait >100μs */
+
+                                                    if (SYSTICK_OK != systickStat){
+                                                        retStatus = LCD_TIMER_ERROR;
+                                                    }else{
+                                                        /* Step 3: Clear Display - Clears all display and returns home */
+                                                        /* Send high nibble first */
+                                                        retStatus = ClearDisplay(HIGH_NIBBLE);
+                                                        
+                                                        if (LCD_OK != retStatus){
+                                                            retStatus = retStatus;  /* Preserve error status */
+                                                        }else{
+                                                            retStatus = LCD_GenerateEnablePulse();
+                                                            if (LCD_OK != retStatus){
+                                                                retStatus = retStatus;  /* Preserve error status */
+                                                            }else{
+                                                                /* Send low nibble */
+                                                                retStatus = ClearDisplay(LOW_NIBBLE);
+                                                                if (LCD_OK != retStatus){
+                                                                    retStatus = retStatus;  /* Preserve error status */
+                                                                }else{
+                                                                    retStatus = LCD_GenerateEnablePulse();
+                                                                    if (LCD_OK != retStatus){
+                                                                        retStatus = retStatus;  /* Preserve error status */
+                                                                    }else{
+                                                                        systickStat = SYSTICK_Wait_ms(2);  /* Wait for clear (1.64ms typical) */
+
+                                                                        if (SYSTICK_OK != systickStat){
+                                                                            retStatus = LCD_TIMER_ERROR;
+                                                                        }else{
+                                                                            /* Step 4: Entry Mode Set - Configure increment and shift */
+                                                                            /* Send high nibble first */
+                                                                            retStatus = EnteryModeSet(LcdCong.DisplayShiftOperation, LcdCong.IncrementStatus, HIGH_NIBBLE);
+                                                                            if (LCD_OK != retStatus){
+                                                                                retStatus = retStatus;  /* Preserve error status */
+                                                                            }else{
+                                                                                retStatus = LCD_GenerateEnablePulse();
+                                                                                if (LCD_OK != retStatus){
+                                                                                    retStatus = retStatus;  /* Preserve error status */
+                                                                                }else{
+                                                                                    /* Send low nibble */
+                                                                                    retStatus = EnteryModeSet(LcdCong.DisplayShiftOperation, LcdCong.IncrementStatus, LOW_NIBBLE);
+                                                                                    if (LCD_OK != retStatus){
+                                                                                        retStatus = retStatus;  /* Preserve error status */
+                                                                                    }else{
+                                                                                        retStatus = LCD_GenerateEnablePulse();
+                                                                                        if (LCD_OK != retStatus){
+                                                                                            retStatus = retStatus;  /* Preserve error status */
+                                                                                        }else{
+                                                                                            retStatus = LCD_OK;
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    }
+    }
+    return retStatus;  /* Single exit point */
+}
+
+
+/**
+ * @brief Set LCD cursor position to specified row and column
+ * @details Calculates DDRAM address and updates LCD cursor position
+ *          Supports both 4-bit and 8-bit operation modes
+ * @param row: Target row (0 or 1 for 2-line LCD)
+ * @param col: Target column (0-15 for 16-column LCD)
+ * @param nibble: Bits_t - ALL_BITS, HIGH_NIBBLE, or LOW_NIBBLE
+ * @return LCD_Status_t: Operation status
+ * @note Updates internal cursor position tracking variables
+ *       Caller is responsible for generating enable pulse
+ */
+static LCD_Status_t LCD_SetCursor_Local(uint8_t row, uint8_t col, Bits_t nibble)
+{
+    LCD_Status_t retStatus = LCD_NOT_OK;
+    uint8_t address = 0;  /* DDRAM address to calculate */
+    
+    /* Validate column range (0-15 for 16-column LCD) */
+    if (col > 15){
+        retStatus = LCD_WRONG_COLUMN;  /* Column out of range */
+    }else{
+        /* Calculate DDRAM address based on row */
+        if (row == 0){
+            address = ROW_0_OFFSET + col;  /* First line: 0x00-0x0F */
+            LCD_CurrentRow = row;  /* Update row tracking */
+            LCD_CurrentCol = col;  /* Update column tracking */
+            retStatus = LCD_OK;   /* Valid row */
+        }else if (row == 1){
+            address = ROW_1_OFFSET + col;  /* Second line: 0x40-0x4F */
+            LCD_CurrentRow = row;  /* Update row tracking */
+            LCD_CurrentCol = col;  /* Update column tracking */
+            retStatus = LCD_OK;   /* Valid row */
+        }else{
+            retStatus = LCD_WRONG_ROW;  /* Row out of range (only 0 or 1 valid) */
+        }
+        
+        /* Set DDRAM address if row is valid */
+        if (LCD_WRONG_ROW != retStatus){
+            retStatus = LCD_enuSetDDRAMAddress(address, nibble);  /* Set DDRAM address with specified nibble */
+        }
+    }
+    
+    return retStatus;
+}
+
+
+static uint8_t customCharIterator = 0;
+
+static void ExecutCreateCustomChar(){
+    LCD_Status_t retstat;
+    GPIO_Status_t gpioStatus;
+    switch(createCustomCharSeq){
+
+        case CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_CURSOR_HIGH:
+            retstat   = LCD_enuSetCGRAMAddress((CustomCharBuffer.location) << 3, HIGH_NIBBLE);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_CURSOR_LOW;
+            break;
+        case CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_CURSOR_LOW:
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_CURSOR_HIGH;
+            break;
+        case CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_CURSOR_HIGH:
+            retstat   = LCD_enuSetCGRAMAddress((CustomCharBuffer.location) << 3, LOW_NIBBLE);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_CURSOR_LOW;
+            break;
+        case CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_CURSOR_LOW:
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            
+            customCharIterator = 0;
+            createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_HIGH;
+            break;
+        case CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_HIGH:
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_HIGH);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);
+            retstat   = LCD_WriteByte(CustomCharBuffer.charmap[customCharIterator] >> HIGH_NIBBLE);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_LOW;
+            break;
+        case CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_LOW:
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_HIGH;
+            break;
+        case CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_HIGH:
+            retstat    = LCD_WriteByte(CustomCharBuffer.charmap[customCharIterator++] >> LOW_NIBBLE);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_LOW;
+            break;
+        case CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_LOW:
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(customCharIterator >= SPECIAL_CHAR_LENGHT){
+                customCharIterator = 0;
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_SET_CURSOR_DDRAM_HIGH;
+            }else{
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_HIGH;
+            }
+            break;
+        case CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_SET_CURSOR_DDRAM_HIGH:
+                retstat    = LCD_SetCursor_Local(LCD_CurrentRow,LCD_CurrentCol,HIGH_NIBBLE);
+                gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_SET_CURSOR_DDRAM_LOW;
+                break;
+        case CREATE_CUSTOM_CHAR_4BIT_HIGH_NIBBLE_SET_CURSOR_DDRAM_LOW:
+                gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+        case CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_SET_CURSOR_DDRAM_HIGH :
+                retstat    = LCD_SetCursor_Local(LCD_CurrentRow,LCD_CurrentCol,LOW_NIBBLE);
+                gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_SET_CURSOR_DDRAM_LOW;
+                break;
+        case CREATE_CUSTOM_CHAR_4BIT_LOW_NIBBLE_SET_CURSOR_DDRAM_LOW :
+                gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                break;
+            
+        case CREATE_CUSTOM_CHAR_8BIT_CURSOR_HIGH:
+            retstat   = LCD_enuSetCGRAMAddress((CustomCharBuffer.location) << 3, ALL_BITS);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            createCustomCharSeq = CREATE_CUSTOM_CHAR_8BIT_CURSOR_LOW;
+            break;
+        case CREATE_CUSTOM_CHAR_8BIT_CURSOR_LOW:
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            createCustomCharSeq = CREATE_CUSTOM_CHAR_8BIT_HIGH;
+            break;
+        case CREATE_CUSTOM_CHAR_8BIT_HIGH:
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RS.port, LcdPinout.RS.pin, GPIO_HIGH);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.RW.port, LcdPinout.RW.pin, GPIO_LOW);
+            retstat   = LCD_WriteByte(CustomCharBuffer.charmap[customCharIterator++]);
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+            createCustomCharSeq = CREATE_CUSTOM_CHAR_8BIT_LOW;  
+            break;
+        case CREATE_CUSTOM_CHAR_8BIT_LOW:
+            gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+            if(customCharIterator >= SPECIAL_CHAR_LENGHT){
+                customCharIterator = 0;
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_8BIT_SET_CURSOR_DDRAM_HIGH;
+            }else{
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_8BIT_HIGH;
+            }
+            break;
+        case CREATE_CUSTOM_CHAR_8BIT_SET_CURSOR_DDRAM_HIGH:
+                retstat    = LCD_SetCursor_Local(LCD_CurrentRow,LCD_CurrentCol,ALL_BITS);
+                gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_HIGH);
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_8BIT_SET_CURSOR_DDRAM_LOW;
+                break;
+        case CREATE_CUSTOM_CHAR_8BIT_SET_CURSOR_DDRAM_LOW:
+                gpioStatus = GPIO_enuSetPinVal(LcdPinout.EN.port, LcdPinout.EN.pin, GPIO_LOW);
+                createCustomCharSeq = CREATE_CUSTOM_CHAR_DONE;
+                lcdState = LCD_NO_ACTION;
+                break;
+
+        case CREATE_CUSTOM_CHAR_DONE:
+            /* Do nothing, creation complete */
+            break;
+            
+    }
+}
+
+LCD_Status_t LCD_enuAsynWriteCharacter(uint8_t displayedChar){
+    LCD_Status_t retStatus = LCD_NOT_OK;
+    if(LCD_NO_ACTION!=lcdState){
+        retStatus = LCD_BUSY;
+    }else{
+        if(INIT_FAILED == initSeq){
+            retStatus = LCD_NOT_INITIALIZED;
+        }else{
+            LCD_DataBuffer_t lcdBuffer = {
+                .row = LCD_CurrentRow,
+                .col = LCD_CurrentCol,
+            };
+            lcdBuffer.buff[0] = displayedChar;
+            lcdBuffer.buff[1] = '\0';
+            Queue_Push(&lcdBuffer);
+            if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+                writeStringSeq = WRITE_STRING_4_BIT_HIGH_NIBBLE_HIGH;
+            }else{
+                writeStringSeq = WRITE_STRING_8_BIT_HIGH;
+            }
+            lcdState = LCD_WRITE_STRING;
+            retStatus = LCD_OK;
+        }
+    }
+    return retStatus;
+}
+
+LCD_Status_t LCD_AsynDisplayCustomChar(uint8_t location){
+    LCD_Status_t retStatus = LCD_NOT_OK;
+    if(LCD_NO_ACTION!=lcdState){
+        retStatus = LCD_BUSY;
+    }else{
+        if(INIT_FAILED == initSeq){
+            retStatus = LCD_NOT_INITIALIZED;
+        }else{
+    
+            /* Validate location (only 0-7 valid for 8 custom characters) */
+            if (location > LOCATION_MASK){
+                retStatus = LCD_WRONG_LOCATION;  /* Invalid custom character location */
+            }else{
+                LCD_DataBuffer_t lcdBuffer;
+                lcdBuffer.buff[0] = location;
+                lcdBuffer.buff[1] = '\0';
+                Queue_Push(&lcdBuffer);
+            
+                if(LcdCong.BitOperation == LCD_4_BIT_OPERATION){
+                    createCustomCharSeq = WRITE_STRING_4_BIT_HIGH_NIBBLE_HIGH;
+                }else{
+                    createCustomCharSeq = WRITE_STRING_8_BIT_HIGH;
+                }
+                lcdState = LCD_WRITE_STRING;
+                retStatus = LCD_OK;
+            }
+        }
+    }
+    return retStatus;
+}
+
+
+typedef void (*LCD_Callback_t)(LCD_Status_t status);
+static LCD_Callback_t Lcd_Callback = NULL;
+
+void LCD_vdAsyncRegisterCallback(LCD_Callback_t callback){
+    Lcd_Callback = callback;
+}

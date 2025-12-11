@@ -55,7 +55,7 @@ LCD_Config_t LcdCong = {
      *    LCD_8_BIT_OPERATION : 8-bit interface (DB0-DB7, 11 pins total)
      *    LCD_4_BIT_OPERATION : 4-bit interface (DB4-DB7, 7 pins total)
      ***************************************************************************/
-    .BitOperation = LCD_8_BIT_OPERATION,
+    .BitOperation = LCD_4_BIT_OPERATION,
     
     /***************************************************************************
      * LineDisplay - Number of Display Lines
