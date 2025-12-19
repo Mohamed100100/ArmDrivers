@@ -54,9 +54,9 @@
 #define RCC_AHB1_GPIOD_CLOCK                 (uint64_t)(0b000100000000000000000000000000001000ULL)  /**< GPIOD clock on AHB1 (bit 3) */
 #define RCC_AHB1_GPIOE_CLOCK                 (uint64_t)(0b000100000000000000000000000000010000ULL)  /**< GPIOE clock on AHB1 (bit 4) */
 #define RCC_AHB1_GPIOH_CLOCK                 (uint64_t)(0b000100000000000000000000000010000000ULL)  /**< GPIOH clock on AHB1 (bit 7) */
-#define RCC_AHB1_CRC_CLOCK                   (uint64_t)(0b000100000000000000000001000001000000ULL)  /**< CRC clock on AHB1 (bit 12) */
+#define RCC_AHB1_CRC_CLOCK                   (uint64_t)(0b000100000000000000000001000000000000ULL)  /**< CRC clock on AHB1 (bit 12) */
 #define RCC_AHB1_DMA1_CLOCK                  (uint64_t)(0b000100000000001000000000000000000000ULL)  /**< DMA1 clock on AHB1 (bit 21) */
-#define RCC_AHB1_DMA2_CLOCK                  (uint64_t)(0b000100000000010000000000000100000000ULL)  /**< DMA2 clock on AHB1 (bit 22) */
+#define RCC_AHB1_DMA2_CLOCK                  (uint64_t)(0b000100000000010000000000000000000000ULL)  /**< DMA2 clock on AHB1 (bit 22) */
 
 /******************************************************************************
  *                   AHB2 PERIPHERAL CLOCK ENABLE MASKS
