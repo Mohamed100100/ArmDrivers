@@ -9,5 +9,8 @@ void sevsegTest();
 void nvicTest();
 void testLinkerScript();
 void AsynchLcdTest();
+void uartTest();
+void DMA_Test_Transmit(void);
+void DMA_Test_Receive(void);
 
 #endif

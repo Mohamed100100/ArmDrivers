@@ -6,8 +6,7 @@
 
 int main(){
 
-    uartTest();
-
+    DMA_Test_Receive();
     while(1){
 
     }
