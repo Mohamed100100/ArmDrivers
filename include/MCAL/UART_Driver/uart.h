@@ -18,6 +18,19 @@
 #define UART_INTERRUPT_TC           (0b0000000000000001000000)  // Transmission complete interrupt enable
 #define UART_INTERRUPT_PE           (0b0000000000000100000000)  // Parity error interrupt enable
 
+//                                   0b1098765432109876543210
+#define UART_FLAG_TXE               (0b0000000000000010000000)  // Transmit data register empty flag
+#define UART_FLAG_TC                (0b0000000000000001000000)  // Transmission complete flag
+#define UART_FLAG_RXNE              (0b0000000000000000100000)  // Receive data register not empty flag
+#define UART_FLAG_ORE               (0b0000000000000000001000)  // Overrun error flag
+#define UART_FLAG_NOISE             (0b0000000000000000000100)  // Noise error flag
+#define UART_FLAG_FE                (0b0000000000000000000010)  // Framing error flag
+#define UART_FLAG_PE                (0b0000000000000000000001)  // Parity error flag
+
+//                                   0b1098765432109876543210
+#define UART_DMA_TRANSMIT_ENABLE    (0b0000000000000010000000)  // DMA transmit enable
+#define UART_DMA_RECEIVE_ENABLE     (0b0000000000000001000000)  // DMA receive enable
+
 typedef void (*UART_Callback_t)(void);
 
 typedef struct {
@@ -32,7 +45,8 @@ typedef struct {
     UART_Callback_t FramingErrorCallback;
     UART_Callback_t NoiseErrorCallback;
     UART_Callback_t OverrunErrorCallback;
-} UART_ErrorCallbacks_t;
+    UART_Callback_t TC_Callback;
+} UART_Callbacks_t;
 
 typedef enum {
     UART_NOT_OK,
@@ -49,6 +63,7 @@ typedef enum {
     UART_NOT_INIT_SUCCESSFULLY,
     UART_GPIO_ERROR,
     UART_TX_BUSY,
+    UART_WRONG_DMA_ENABLE,
 } UART_Status_t;
 
 typedef enum {
@@ -113,15 +128,18 @@ typedef struct {
     UART_WordLength_t WordLength;       // Set word length
     UART_Sample_t Sample;               // Set sampling method
     // you have masks to enable or disable the UART peripheral
-    uint8_t UartEnabled;                // Enable or disable UART (transmitter and receiver)
-    uint8_t InterruptFlags;             // Enable or disable interrupt flags
+    uint32_t UartEnabled;                // Enable or disable UART (transmitter and receiver)
+    uint32_t InterruptFlags;             // Enable or disable interrupt flags
 } UART_Config_t;
 
 UART_Status_t UART_enuInit(UART_Config_t* config);
+
 UART_Status_t UART_enuSynTransmitBuffer(UART_Number_t uartNumber, const uint8_t* txBuffer, uint16_t size);
 UART_Status_t UART_enuSynReceiveBuffer(UART_Number_t uartNumber, uint8_t* rxBuffer, uint16_t size);
 UART_Status_t UART_enuAsynTransmitBuffer(UART_Number_t uartNumber, UART_AsynBuffer_t* txBuffer);
 UART_Status_t UART_enuAsynReceiveBuffer(UART_Number_t uartNumber, UART_AsynBuffer_t* rxBuffer);
+
+UART_Status_t UART_enuActivateDMA(UART_Number_t uartNumber, uint32_t enableDmaFlag);
 
 uint8_t UART_u8ReadTXEFlag(UART_Number_t uartNumber);
 uint8_t UART_u8ReadTCFlag(UART_Number_t uartNumber);
@@ -131,7 +149,11 @@ uint8_t UART_u8ReadNoiseFlag(UART_Number_t uartNumber);
 uint8_t UART_u8ReadFEFlag(UART_Number_t uartNumber);
 uint8_t UART_u8ReadPEFlag(UART_Number_t uartNumber);
 
-UART_Status_t UART_enuRegisterCallbacks(UART_Number_t uartNumber, UART_ErrorCallbacks_t* callbacks);
+UART_Status_t UART_enuEnableInterrupts(UART_Number_t uartNumber, uint32_t interruptFlags);
+UART_Status_t UART_enuDisableInterrupts(UART_Number_t uartNumber, uint32_t interruptFlags);
+UART_Status_t UART_enuClearFlags(UART_Number_t uartNumber,uint32_t interruptFlags);
+
+UART_Status_t UART_enuRegisterCallbacks(UART_Number_t uartNumber, UART_Callbacks_t* callbacks);
 
 
 #endif // UART_H

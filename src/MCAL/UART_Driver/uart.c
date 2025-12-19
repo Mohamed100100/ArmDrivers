@@ -29,10 +29,10 @@ static UARTY_State_t UART_Rx_State[] = {
     UART_READY,
     UART_READY
 };
-static UART_ErrorCallbacks_t ErrorCallbacks[3] = {
-    { .ParityErrorCallback = NULL, .FramingErrorCallback = NULL, .NoiseErrorCallback = NULL, .OverrunErrorCallback = NULL },
-    { .ParityErrorCallback = NULL, .FramingErrorCallback = NULL, .NoiseErrorCallback = NULL, .OverrunErrorCallback = NULL },
-    { .ParityErrorCallback = NULL, .FramingErrorCallback = NULL, .NoiseErrorCallback = NULL, .OverrunErrorCallback = NULL }
+static UART_Callbacks_t UartCallbacks[3] = {
+    { .ParityErrorCallback = NULL, .FramingErrorCallback = NULL, .NoiseErrorCallback = NULL, .OverrunErrorCallback = NULL ,.TC_Callback = NULL},
+    { .ParityErrorCallback = NULL, .FramingErrorCallback = NULL, .NoiseErrorCallback = NULL, .OverrunErrorCallback = NULL ,.TC_Callback = NULL},
+    { .ParityErrorCallback = NULL, .FramingErrorCallback = NULL, .NoiseErrorCallback = NULL, .OverrunErrorCallback = NULL ,.TC_Callback = NULL}
 };
 static UART_AsynBuffer_t *TxBuffers[3] = {
     NULL,
@@ -258,8 +258,77 @@ UART_Status_t UART_enuAsynReceiveBuffer(UART_Number_t uartNumber, UART_AsynBuffe
     return status;
 }
 
+UART_Status_t UART_enuActivateDMA(UART_Number_t uartNumber, uint32_t enableDmaFlag){
+    UART_Status_t status = UART_NOT_OK;
 
-UART_Status_t UART_enuRegisterCallbacks(UART_Number_t uartNumber, UART_ErrorCallbacks_t* callbacks) {
+    if(uartNumber > UART_6){
+        status = UART_WRONG_UART_NUMBER;
+    }else{
+        if(UART_InitState != UART_INIT) {
+            status = UART_NOT_INIT_SUCCESSFULLY;
+        }else{
+            UARTRegs_t* uart = UART_Registers[uartNumber];
+            if((enableDmaFlag & UART_DMA_MASK) != 0){
+                status  = UART_WRONG_DMA_ENABLE;
+            }else{ 
+                // Enable DMA for transmission and reception
+                uart->CR3 |= enableDmaFlag;
+
+                status = UART_OK;
+            }
+        }
+    }
+    return status;
+}
+
+UART_Status_t UART_enuEnableInterrupts(UART_Number_t uartNumber, uint32_t interruptFlags){
+    UART_Status_t status = UART_NOT_OK;
+
+    if(uartNumber > UART_6){
+        status = UART_WRONG_UART_NUMBER;
+    }else{
+        if(UART_InitState != UART_INIT) {
+            status = UART_NOT_INIT_SUCCESSFULLY;
+        }else{
+            if((interruptFlags & UART_INTERRUPT_MASK) != 0){
+                status  = UART_WRONG_INTERRUPT_FLAGS;
+            }else{ 
+                // Enable specified interrupts
+                UARTRegs_t* uart = UART_Registers[uartNumber];
+                uart->CR1 |= (interruptFlags & UART_CR1_FLAGS_MASK);
+                uart->CR3 |= (interruptFlags & UART_CR3_FLAGS_MASK);
+                status = UART_OK;
+            }
+        }
+    }
+    return status;
+}
+
+UART_Status_t UART_enuDisableInterrupts(UART_Number_t uartNumber, uint32_t interruptFlags){
+    UART_Status_t status = UART_NOT_OK;
+
+    if(uartNumber > UART_6){
+        status = UART_WRONG_UART_NUMBER;
+    }else{
+        if(UART_InitState != UART_INIT) {
+            status = UART_NOT_INIT_SUCCESSFULLY;
+        }else{
+            if((interruptFlags & UART_INTERRUPT_MASK) != 0){
+                status  = UART_WRONG_INTERRUPT_FLAGS;
+            }else{ 
+                // Disable specified interrupts
+                UARTRegs_t* uart = UART_Registers[uartNumber];
+                uart->CR1 &= ~ (interruptFlags & UART_CR1_FLAGS_MASK);
+                uart->CR3 &= ~ (interruptFlags & UART_CR3_FLAGS_MASK);
+                status = UART_OK;
+            }
+        }
+    }
+    return status;
+}
+
+
+UART_Status_t UART_enuRegisterCallbacks(UART_Number_t uartNumber, UART_Callbacks_t* callbacks) {
     UART_Status_t status = UART_NOT_OK;
 
     if(callbacks == NULL) {
@@ -268,16 +337,34 @@ UART_Status_t UART_enuRegisterCallbacks(UART_Number_t uartNumber, UART_ErrorCall
         if(uartNumber > UART_6){
             status = UART_WRONG_UART_NUMBER;
         }else{
-            ErrorCallbacks[uartNumber].FramingErrorCallback = callbacks->FramingErrorCallback;
-            ErrorCallbacks[uartNumber].ParityErrorCallback = callbacks->ParityErrorCallback;
-            ErrorCallbacks[uartNumber].NoiseErrorCallback = callbacks->NoiseErrorCallback;
-            ErrorCallbacks[uartNumber].OverrunErrorCallback = callbacks->OverrunErrorCallback;
+            UartCallbacks[uartNumber].FramingErrorCallback = callbacks->FramingErrorCallback;
+            UartCallbacks[uartNumber].ParityErrorCallback = callbacks->ParityErrorCallback;
+            UartCallbacks[uartNumber].NoiseErrorCallback = callbacks->NoiseErrorCallback;
+            UartCallbacks[uartNumber].OverrunErrorCallback = callbacks->OverrunErrorCallback;
+            UartCallbacks[uartNumber].TC_Callback = callbacks->TC_Callback;
             status = UART_OK;
         }
     }
     return status;
 }
 
+UART_Status_t UART_enuClearFlags(UART_Number_t uartNumber,uint32_t interruptFlags) {
+    UART_Status_t status = UART_NOT_OK;
+
+    if(uartNumber > UART_6){
+        status = UART_WRONG_UART_NUMBER;
+    }else{
+        if(UART_InitState != UART_INIT) {
+            status = UART_NOT_INIT_SUCCESSFULLY;
+        }else{
+            UARTRegs_t* uart = UART_Registers[uartNumber];
+            // Clear flags by writing 0 to them
+            uart->SR &= ~interruptFlags;
+            status = UART_OK;
+        }
+    }
+    return status;
+}
 
 uint8_t UART_u8ReadTXEFlag(UART_Number_t uartNumber) {
     UARTRegs_t* uart = UART_Registers[uartNumber];
@@ -492,32 +579,38 @@ static void USART_LocalHandler(UART_Number_t uartNumber) {
 
     if(LocalFlags.ParityErrorFlag == 1) {
         // Parity Error
-        if(ErrorCallbacks[uartNumber].ParityErrorCallback != NULL) {
-            ErrorCallbacks[uartNumber].ParityErrorCallback();
+        if(UartCallbacks[uartNumber].ParityErrorCallback != NULL) {
+            UartCallbacks[uartNumber].ParityErrorCallback();
         }
     }
 
     if(LocalFlags.FramingErrorFlag == 1) {
         // Framing Error
-        if(ErrorCallbacks[uartNumber].FramingErrorCallback != NULL) {
-            ErrorCallbacks[uartNumber].FramingErrorCallback();
+        if(UartCallbacks[uartNumber].FramingErrorCallback != NULL) {
+            UartCallbacks[uartNumber].FramingErrorCallback();
         }
     }
 
     if(LocalFlags.NoiseErrorFlag == 1) {
         // Noise Error
-        if(ErrorCallbacks[uartNumber].NoiseErrorCallback != NULL) {
-            ErrorCallbacks[uartNumber].NoiseErrorCallback();
+        if(UartCallbacks[uartNumber].NoiseErrorCallback != NULL) {
+            UartCallbacks[uartNumber].NoiseErrorCallback();
         }
     }
 
     if(LocalFlags.OverrunErrorFlag == 1) {
         // Overrun Error
-        if(ErrorCallbacks[uartNumber].OverrunErrorCallback != NULL) {
-            ErrorCallbacks[uartNumber].OverrunErrorCallback();
+        if(UartCallbacks[uartNumber].OverrunErrorCallback != NULL) {
+            UartCallbacks[uartNumber].OverrunErrorCallback();
         }
     }
 
+    if(LocalFlags.TC_Flag == 1) {
+        // Transmission Complete
+        if(UartCallbacks[uartNumber].TC_Callback != NULL) {
+            UartCallbacks[uartNumber].TC_Callback();
+        }
+    }
 }
 
 
@@ -569,3 +662,5 @@ void USART6_IRQHandler(void) {
 
     USART_LocalHandler(UART_6);
 }
+
+
