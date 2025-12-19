@@ -9,8 +9,8 @@
 const MCU_Config_t MCU_Configs = {
     .MCU_AHB1_PrephralEnable = MCU_AHB1_GPIOA_CLOCK|MCU_AHB1_GPIOB_CLOCK|MCU_AHB1_GPIOC_CLOCK,
     .MCU_AHB2_PrephralEnable = MCU_AHB2_NO_PERIPHERAL,
-    .MCU_APB1_PrephralEnable = MCU_APB1_NO_PERIPHERAL,
-    .MCU_APB2_PrephralEnable = MCU_APB2_NO_PERIPHERAL,
+    .MCU_APB1_PrephralEnable = MCU_APB1_USART2_CLOCK,
+    .MCU_APB2_PrephralEnable = MCU_APB2_USART1_CLOCK|MCU_APB2_USART6_CLOCK,
     .MCU_SystemClockSource   = MCU_SYSCLK_HSI,
     .MCU_AHP_Prescaler       = MCU_AHB_NO_DIVISION,
     .MCU_APB1_Prescaler      = MCU_APB1_NO_DIVISION,

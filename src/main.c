@@ -1,10 +1,18 @@
 
 #include "test.h"
 
+
+
+
 int main(){
 
-// LcdTest();
+    uartTest();
 
-AsynchLcdTest();
+    while(1){
+
+    }
+
+    return 0;
+
     
 }

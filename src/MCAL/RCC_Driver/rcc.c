@@ -693,7 +693,7 @@ RCC_Status_t RCC_SetAHBPrescaler(RCC_AHPPrescaler_t AHBPrescaler)
          * HPRE bits[7:4] control AHB prescaler
          * OR operation applies the prescaler value
          */
-        RCC_Registers->CFGR.ALL_FIELDS |= AHB_PRESCALER_NO_DIVISION_MASK;
+        RCC_Registers->CFGR.ALL_FIELDS |= AHBPrescaler;
         status = RCC_OK;
     }
 
@@ -743,7 +743,7 @@ RCC_Status_t RCC_SetAPB1Prescaler(RCC_APB1Prescaler_t APB1Prescaler)
          * PPRE1 bits[12:10] control APB1 prescaler
          * OR operation applies the prescaler value
          */
-        RCC_Registers->CFGR.ALL_FIELDS |= APB1_PRESCALER_NO_DIVISION_MASK;
+        RCC_Registers->CFGR.ALL_FIELDS |= APB1Prescaler;
         status = RCC_OK;
     }
 
@@ -793,7 +793,7 @@ RCC_Status_t RCC_SetAPB2Prescaler(RCC_APB2Prescaler_t APB2Prescaler)
          * PPRE2 bits[15:13] control APB2 prescaler
          * OR operation applies the prescaler value
          */
-        RCC_Registers->CFGR.ALL_FIELDS |= APB2_PRESCALER_NO_DIVISION_MASK;
+        RCC_Registers->CFGR.ALL_FIELDS |= APB2Prescaler;
         status = RCC_OK;
     }
 
