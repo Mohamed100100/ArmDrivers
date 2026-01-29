@@ -1,0 +1,78 @@
+#ifndef SPI_PRIV_H
+#define SPI_PRIV_H
+
+#include "LIB/stdtypes.h"
+#include "MCAL/GPIO_Driver/gpio_int.h"
+
+#define SPI1_BASE_ADDRESS ((volatile SPI_Registers_t*)0x40013000UL)
+#define SPI2_BASE_ADDRESS ((volatile SPI_Registers_t*)0x40003800UL)
+#define SPI3_BASE_ADDRESS ((volatile SPI_Registers_t*)0x40003C00UL)
+#define SPI4_BASE_ADDRESS ((volatile SPI_Registers_t*)0x40013400UL) 
+
+//                       0b10987654321098765432109876543210
+#define ENABLE_SPI      (0b00000000000000000000000001000000UL)
+#define DISABLE_SPI     (0b11111111111111111111111110111111UL)
+
+#define HIGH  (1UL)
+#define LOW   (0UL)
+
+#define SPI_NUMBER_MASK              (SPI4)
+#define SPI_COMMUNICATION_MODE_MASK  (0b11111111111111110011101111111111UL)
+#define SPI_MODE_MASK                (0b11111111111111111111111111111011UL)
+#define SPI_CRC_MASK                 (0b11111111111111111101111111111111UL)
+#define SPI_DATA_LENGTH_MASK         (0b11111111111111111111011111111111UL)
+#define SPI_DATA_ORDER_MASK          (0b11111111111111111111111101111111UL)
+#define SPI_BAUDRATE_MASK            (0b11111111111111111111111111000111UL)
+#define SPI_POLARITY_PHASE_MASK      (0b11111111111111111111111111111100UL)
+#define SPI_FRAME_FORMAT_MASK        (0b11111111111111111111111111101111UL)
+#define SPI_DMA_MASK                 (0b11111111111111111111111111111100UL)
+#define SPI_NSS_MASK                 (0b11111111111111111111110011111011UL)
+
+#define SPI_NSS_CR1_SELECTION_MASK   (0b00000000000000000000001100000000UL)
+#define SPI_NSS_CR2_SELECTION_MASK   (0b00000000000000000000000000000100UL)
+
+#define SPI_NOT_USED_FLAG            (2UL)
+#define SPI_GET_FIRST_BIT_MASK       (0x01UL)
+
+#define SPI_NUMBER                   (4UL)
+#define NUMBER_OF_FLAGS              (9UL)
+
+//                                            0b10987654321098765432109876543210
+#define SPI_INTERRUPT_ENABLE_TXE_COMPLETED   (0b00000000000000000000000010000000UL)
+#define SPI_INTERRUPT_ENABLE_RXNE_COMPLETED  (0b00000000000000000000000001000000UL)
+#define SPI_INTERRUPT_ENABLE_ERR_OCCURRED    (0b00000000000000000000000000100000UL)
+
+#define SPI_INTERRUPT_DISABLE_TXE_COMPLETED  (0b11111111111111111111111101111111UL)
+#define SPI_INTERRUPT_DISABLE_RXNE_COMPLETED (0b11111111111111111111111110111111UL)
+#define SPI_INTERRUPT_DISABLE_ERR_OCCURRED   (0b11111111111111111111111111011111UL)
+
+
+typedef struct {
+    GPIO_Port_t port;
+    GPIO_Pin_t pin;
+    uint8_t    usedOrNot;
+}SPI_Pinout_t;
+
+typedef struct {
+    SPI_Pinout_t MISO;
+    SPI_Pinout_t MOSI;
+    SPI_Pinout_t SCK;
+    SPI_Pinout_t NSS;
+}SPI_PinsConfig_t;
+
+
+typedef struct {
+    volatile uint32_t CR1;    // Control Register 1
+    volatile uint32_t CR2;    // Control Register 2
+    volatile uint32_t SR;     // Status Register
+    volatile uint32_t DR;     // Data Register
+    volatile uint32_t CRCPR;  // CRC Polynomial Register
+    volatile uint32_t RXCRCR; // RX CRC Register
+    volatile uint32_t TXCRCR; // TX CRC Register
+    volatile uint32_t I2SCFGR; // I2S Configuration Register
+    volatile uint32_t I2SPR;  // I2S Prescaler Register
+} SPI_Registers_t;
+
+
+
+#endif // SPI_PRIV_H
