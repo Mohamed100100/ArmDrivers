@@ -329,7 +329,6 @@ NVIC_Status_t NVIC_GetPendingIRQ (NVIC_IRQ_t IRQn,NVIC_Pending_t* RetPending){
 }
 
 /******************************************************************************
-/******************************************************************************
  * @brief Set priority grouping for interrupt priorities
  * 
  * @details This function configures the priority grouping by writing to the
