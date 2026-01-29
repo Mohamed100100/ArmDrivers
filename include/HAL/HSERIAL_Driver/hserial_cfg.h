@@ -1,0 +1,15 @@
+#ifndef HSERIAL_CFG_H
+#define HSERIAL_CFG_H
+
+
+typedef enum {
+    HSERIAL_CHANNEL_1 = 0,
+    // HSERIAL_CHANNEL_2,
+    // HSERIAL_SENSOR_TEMP,
+
+    HSERIAL_CHANNEL_LENGTH
+} HSERIAL_Channel_t;
+
+
+
+#endif // HSERIAL_CFG_H
