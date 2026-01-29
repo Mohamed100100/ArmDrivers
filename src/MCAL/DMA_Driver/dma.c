@@ -159,6 +159,41 @@ DMA_Status_t DMA_enuStartTransfer(DMA_Controller_t DMAx, DMA_Stream_t Streamx){
     return retStatus;
 }
 
+DMA_Status_t DMA_enuSetMemoryAddress(DMA_Controller_t DMAx, DMA_Stream_t Streamx, uint32_t MemoryAddress){
+    DMA_Status_t retStatus = DMA_NOT_OK;
+    if(DMAx > DMA2){
+        retStatus = DMA_WRONG_DMA_CONTROLLER;
+    }else if((Streamx > DMA_STREAM7)){
+        retStatus = DMA_WRONG_STREAM;
+    }else{
+        DMA_StreamRegs_t* streamRegs = &dmaRegisters[DMAx]->STREAM[Streamx];
+        // Set the memory address
+        streamRegs->SM0AR = MemoryAddress;
+        retStatus = DMA_OK;
+    }
+    return retStatus;
+}
+
+
+DMA_Status_t DMA_enuSetNumberOfData(DMA_Controller_t DMAx, DMA_Stream_t Streamx, uint16_t NumberOfData){
+    DMA_Status_t retStatus = DMA_NOT_OK;
+    if(DMAx > DMA2){
+        retStatus = DMA_WRONG_DMA_CONTROLLER;
+    }else if((Streamx > DMA_STREAM7)){
+        retStatus = DMA_WRONG_STREAM;
+    }else{
+        if(NumberOfData == 0){
+            retStatus = DMA_WRONG_ZERO_NUMBER_OF_DATA;
+        }else{
+            DMA_StreamRegs_t* streamRegs = &dmaRegisters[DMAx]->STREAM[Streamx];
+            // Set the number of data to transfer
+            streamRegs->SNDTR = NumberOfData;
+            retStatus = DMA_OK;
+        }
+    }
+    return retStatus;
+}
+
 DMA_Status_t DMA_enuStopTransfer(DMA_Controller_t DMAx, DMA_Stream_t Streamx){
     DMA_Status_t retStatus = DMA_NOT_OK;
     if(DMAx > DMA2){

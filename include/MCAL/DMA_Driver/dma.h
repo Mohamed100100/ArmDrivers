@@ -221,7 +221,9 @@ typedef enum {
 DMA_Status_t DMA_enuInit(const DMA_Config_t* ConfigPtr);
 DMA_Status_t DMA_enuStartTransfer(DMA_Controller_t DMAx, DMA_Stream_t Streamx);
 DMA_Status_t DMA_enuStopTransfer(DMA_Controller_t DMAx, DMA_Stream_t Streamx);
-DMA_Status_t DMA_enuRegisterCallback(DMA_Controller_t DMAx, DMA_Stream_t Streamx,DMA_Interrupts_t Interrupt, DMA_CallBack_t callback);
+DMA_Status_t DMA_enuSetMemoryAddress(DMA_Controller_t DMAx, DMA_Stream_t Streamx, uint32_t MemoryAddress);
+DMA_Status_t DMA_enuSetNumberOfData(DMA_Controller_t DMAx, DMA_Stream_t Streamx, uint16_t NumberOfData);
+DMA_Status_t DMA_enuRegisterCallback(DMA_Controller_t DMAx, DMA_Stream_t Streamx, DMA_Interrupts_t Interrupt, DMA_CallBack_t callback);
 uint8_t DMA_u8ReadFlag(DMA_Controller_t DMAx, DMA_Stream_t Streamx, DMA_Interrupts_t Interrupt);
 DMA_Status_t DMA_enuClearFlag(DMA_Controller_t DMAx, DMA_Stream_t Streamx, DMA_Interrupts_t Interrupt);
 
