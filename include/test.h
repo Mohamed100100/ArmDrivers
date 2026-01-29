@@ -20,4 +20,9 @@ void Test_Hserial_Sync_Uart(void);
 void Test_Hserial_ASync_Uart(void);
 void Test_Hserial_Dma_Uart(void);
 
+
+void Example_ProgramData(void);
+void Example_MassErase(void);
+void Example_ProgramBuffer(void);
+
 #endif

@@ -11,7 +11,15 @@ int main(){
     // Test_Hserial_Dma_Uart();
     // Test_Hserial_ASync_Uart();
 
-    test_SPI_AsyncTransmitReceive();
+    // test_SPI_AsyncTransmitReceive();
+
+
+
+    // Example_ProgramData();
+    // Example_MassErase();
+    Example_ProgramBuffer();
+
+    
     while(1){
 
     }
