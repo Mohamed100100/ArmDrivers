@@ -26,6 +26,9 @@
 #define UART_INTERRUPT_TXE_LOCAL_DISABLE  (0b1111111111111101111111)  // Transmit data register empty interrupt disable
 #define UART_INTERRUPT_RXNE_LOCAL_ENABLE  (0b0000000000000000100000)  // Receive data register not empty interrupt enable
 #define UART_INTERRUPT_RXNE_LOCAL_DISABLE (0b1111111111111111011111)
+#define UART_INTERRUPT_TC_LOCAL_ENABLE    (0b0000000000000001000000)  // Transmission complete interrupt enable
+#define UART_INTERRUPT_TC_LOCAL_DISABLE   (0b1111111111111110111111)  // Transmission complete interrupt disable
+
 
 
 

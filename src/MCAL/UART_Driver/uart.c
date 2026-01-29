@@ -34,17 +34,8 @@ static UART_Callbacks_t UartCallbacks[3] = {
     { .ParityErrorCallback = NULL, .FramingErrorCallback = NULL, .NoiseErrorCallback = NULL, .OverrunErrorCallback = NULL ,.TC_Callback = NULL},
     { .ParityErrorCallback = NULL, .FramingErrorCallback = NULL, .NoiseErrorCallback = NULL, .OverrunErrorCallback = NULL ,.TC_Callback = NULL}
 };
-static UART_AsynBuffer_t *TxBuffers[3] = {
-    NULL,
-    NULL,
-    NULL
-};
-static UART_AsynBuffer_t *RxBuffers[3] = {
-    NULL,
-    NULL,
-    NULL
-};
-
+static UART_AsynBuffer_t TxBuffers[3] = {0};
+static UART_AsynBuffer_t RxBuffers[3] = {0};
 UART_Status_t UART_enuInit(UART_Config_t* config) {
     
     UART_Status_t status = UART_NOT_OK;
@@ -164,8 +155,10 @@ UART_Status_t UART_enuAsynTransmitBuffer(UART_Number_t uartNumber, UART_AsynBuff
                     UART_Tx_State[uartNumber] = UART_BUSY;
                     
                     // Store the transmission buffer
-                    TxBuffers[uartNumber] = txBuffer;
-                    TxBuffers[uartNumber]->index = 0;
+                    TxBuffers[uartNumber].buffer = txBuffer->buffer;
+                    TxBuffers[uartNumber].size = txBuffer->size;
+                    TxBuffers[uartNumber].callback = txBuffer->callback;
+                    TxBuffers[uartNumber].index = 0;
 
                     // Start transmission by sending the first byte
                     UARTRegs_t* uart = UART_Registers[uartNumber];
@@ -175,7 +168,7 @@ UART_Status_t UART_enuAsynTransmitBuffer(UART_Number_t uartNumber, UART_AsynBuff
                     while (UART_u8ReadTXEFlag(uartNumber) == 0); // TXE flag
 
                     // Write data to data register
-                    uart->DR = TxBuffers[uartNumber]->buffer[TxBuffers[uartNumber]->index++];
+                    uart->DR = TxBuffers[uartNumber].buffer[TxBuffers[uartNumber].index++];
 
                     // Enable TXE interrupt
                     uart->CR1 |= UART_INTERRUPT_TXE_LOCAL_ENABLE;
@@ -239,8 +232,10 @@ UART_Status_t UART_enuAsynReceiveBuffer(UART_Number_t uartNumber, UART_AsynBuffe
                     UART_Rx_State[uartNumber] = UART_BUSY;
                     
                     // Store the reception buffer
-                    RxBuffers[uartNumber] = rxBuffer;
-                    RxBuffers[uartNumber]->index = 0;
+                    RxBuffers[uartNumber].buffer = rxBuffer->buffer;
+                    RxBuffers[uartNumber].size = rxBuffer->size;
+                    RxBuffers[uartNumber].callback = rxBuffer->callback;
+                    RxBuffers[uartNumber].index = 0;
 
                     // Start reception by enabling RXNE interrupt
                     UARTRegs_t* uart = UART_Registers[uartNumber];
@@ -536,12 +531,12 @@ static void USART_LocalHandler(UART_Number_t uartNumber) {
     UARTRegs_t* uart = UART_Registers[uartNumber];
 
         if(LocalFlags.RXNE_Flag== 1) {
-        if(RxBuffers[uartNumber] != NULL) {
-            if(RxBuffers[uartNumber]->index < RxBuffers[uartNumber]->size) {
+        if(RxBuffers[uartNumber].buffer != NULL) {
+            if(RxBuffers[uartNumber].index < RxBuffers[uartNumber].size) {
                 // Read received byte
-                RxBuffers[uartNumber]->buffer[RxBuffers[uartNumber]->index++] = (uint8_t)(uart->DR & 0xFF);
+                RxBuffers[uartNumber].buffer[RxBuffers[uartNumber].index++] = (uint8_t)(uart->DR & 0xFF);
             } 
-            if(RxBuffers[uartNumber]->index >= RxBuffers[uartNumber]->size) {
+            if(RxBuffers[uartNumber].index >= RxBuffers[uartNumber].size) {
                 // Reception complete
                 // disable RXNE interrupt
                 uart->CR1 &= UART_INTERRUPT_RXNE_LOCAL_DISABLE;
@@ -549,8 +544,8 @@ static void USART_LocalHandler(UART_Number_t uartNumber) {
                 UART_Rx_State[uartNumber] = UART_READY;
 
                 // Call the callback function if set
-                if(RxBuffers[uartNumber]->callback != NULL) {
-                    RxBuffers[uartNumber]->callback(); 
+                if(RxBuffers[uartNumber].callback != NULL) {
+                    RxBuffers[uartNumber].callback(); 
                 }
             }
         }
@@ -558,10 +553,10 @@ static void USART_LocalHandler(UART_Number_t uartNumber) {
 
     // Check if TXE flag is set
     if(LocalFlags.TXE_Flag == 1) {
-        if(TxBuffers[uartNumber] != NULL) {
-            if(TxBuffers[uartNumber]->index < TxBuffers[uartNumber]->size) {
+        if(TxBuffers[uartNumber].buffer != NULL) {
+            if(TxBuffers[uartNumber].index < TxBuffers[uartNumber].size) {
                 // Send next byte
-                uart->DR = TxBuffers[uartNumber]->buffer[TxBuffers[uartNumber]->index++];
+                uart->DR = TxBuffers[uartNumber].buffer[TxBuffers[uartNumber].index++];
             } else {
                 // disable TXE interrupt
                 uart->CR1 &= UART_INTERRUPT_TXE_LOCAL_DISABLE;
@@ -570,8 +565,8 @@ static void USART_LocalHandler(UART_Number_t uartNumber) {
                 UART_Tx_State[uartNumber] = UART_READY;
 
                 // Call the callback function if set
-                if(TxBuffers[uartNumber]->callback != NULL) {
-                    TxBuffers[uartNumber]->callback(); 
+                if(TxBuffers[uartNumber].callback != NULL) {
+                    TxBuffers[uartNumber].callback(); 
                 }
             }
         }
@@ -608,6 +603,7 @@ static void USART_LocalHandler(UART_Number_t uartNumber) {
     if(LocalFlags.TC_Flag == 1) {
         // Transmission Complete
         if(UartCallbacks[uartNumber].TC_Callback != NULL) {
+            UART_enuClearFlags(uartNumber, UART_INTERRUPT_TC_LOCAL_ENABLE);
             UartCallbacks[uartNumber].TC_Callback();
         }
     }
