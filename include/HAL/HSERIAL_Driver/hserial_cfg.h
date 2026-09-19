@@ -3,7 +3,7 @@
 
 
 typedef enum {
-    HSERIAL_CHANNEL_1 = 0,
+    BOOTLOADER_HSERIAL_CHANNEL = 0,
     // HSERIAL_CHANNEL_2,
     // HSERIAL_SENSOR_TEMP,
 

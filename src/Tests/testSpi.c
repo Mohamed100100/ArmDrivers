@@ -19,11 +19,11 @@ void test_SPI_PollingTransmitReceive(void){
     spiConfig.crcState = SPI_CRC_DISABLED;
     spiConfig.dataLength = SPI_16_BIT_DATA;
     spiConfig.dataOrder = SPI_MSB_FIRST;
-    spiConfig.baudRate = SPI_BAUDRATE_DIV8;
+    spiConfig.baudRate = SPI_BAUDRATE_DIV2;
     spiConfig.polarityPhase = SPI_ONE_IDLE_FIRST_EDGE;
     spiConfig.frameFormat = SPI_MOTOROLA;
     spiConfig.dmaState = SPI_DISABLE_DMA;
-    spiConfig.nssManagement = SPI_NSS_MASTER_SW;
+    spiConfig.nssManagement = SPI_NSS_MASTER_HW_OUTPUT;
     // spiConfig.crcPolynomial = 7;
     spiConfig.slavesConfig.numberOfSlaves = 0;
     // spiConfig.slavesConfig.slaves[0].port = GPIO_PORT_A;
@@ -34,10 +34,12 @@ void test_SPI_PollingTransmitReceive(void){
     status = SPI_enuInit(&spiConfig);
 
 
-    uint16_t txData = 0x5A;
+    uint16_t txData = 0x55AA;
     uint16_t rxData = 0x00;
 
-    status = SPI_enuMasterSyncTransmitReceive(SPI1, txData, &rxData);
+    while(1){
+        status = SPI_enuMasterSyncTransmitReceive(SPI1, txData, &rxData);
+    }
     
 }
 
@@ -70,11 +72,14 @@ void test_SPI_AsyncTransmitReceive(void){
     status = SPI_enuInit(&spiConfig);
 
     uint16_t txData = 0xA5;
-    // status = SPI_enuMasterAsynTransmit(SPI1, txData, Tx_Callback);
-    status = SPI_enuMasterAsynReceive(SPI1, &rxSpiData, Tx_Callback);
+    status = SPI_enuMasterAsynTransmit(SPI1, txData, Tx_Callback);
+    // status = SPI_enuMasterAsynReceive(SPI1, &rxSpiData, Tx_Callback);
 }
 
 void Tx_Callback(void){
     // Transmission complete callback
+    uint16_t txData = 0xA5;
+    SPI_Status_t status = SPI_enuMasterAsynTransmit(SPI1, txData, Tx_Callback);
+
     int a =0;
 }

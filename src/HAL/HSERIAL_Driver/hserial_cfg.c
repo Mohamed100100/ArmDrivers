@@ -6,8 +6,11 @@
 #include "HAL/HSERIAL_Driver/hserial.h"
 #include "HAL/HSERIAL_Driver/hserial_cfg.h"
 
-extern void TxCallback(void);
-extern void RxCallback(void);
+// extern void TxCallback(void);
+// extern void RxCallback(void);
+
+extern void Bootloader_vdTXCallback(void);
+extern void Bootloader_vdRXCallback(void);
 
 const HSERIAL_Config_t HSERIAL_Configurations[HSERIAL_CHANNEL_LENGTH] = {
     // [HSERIAL_CHANNEL_1] ={
@@ -27,20 +30,20 @@ const HSERIAL_Config_t HSERIAL_Configurations[HSERIAL_CHANNEL_LENGTH] = {
     //         .HSERIAL_UartInterruptPriority  = HSERIAL_PRIORITY_2
     //     }
     // },
-    [HSERIAL_CHANNEL_1] = {
+    [BOOTLOADER_HSERIAL_CHANNEL] = {
         .HSERIAL_Mode = HSERIAL_MODE_UART_ASYNC,
         .UART_Async_Config = {
             .HSERIAL_UartPeripheralClock    = 16000000UL,
             .HSERIAL_UartChannel            = HSERIAL_UART_1,
-            .HSERIAL_UartBaudRate           = 9600UL,
+            .HSERIAL_UartBaudRate           = 115200UL,
             .HSERIAL_UartParity             = HSERIAL_UART_PARITY_NONE,
             .HSERIAL_UartOverSampling       = HSERIAL_UART_OVERSAMPLING_16,
             .HSERIAL_UartStopBits           = HSERIAL_UART_STOPBITS_1,
             .HSERIAL_UartWordLength         = HSERIAL_UART_WORDLENGTH_8B,
             .HSERIAL_UartSample             = HSERIAL_UART_ONE_SAMPLE,
             .HSERIAL_UartEnable             = HSERIAL_ENABLE_UART_BOTH,
-            .HSERIAL_UartTxCompleteCallback = TxCallback,
-            .HSERIAL_UartRxCompleteCallback = RxCallback,
+            .HSERIAL_UartTxCompleteCallback = NULL,
+            .HSERIAL_UartRxCompleteCallback = Bootloader_vdRXCallback,
             .HSERIAL_UartInterruptPriority  = HSERIAL_PRIORITY_2
         },
     },
