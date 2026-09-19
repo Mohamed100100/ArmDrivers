@@ -1,139 +1,146 @@
+/******************************************************************************
+ * @file    led.h
+ * @author  Eng.Gemy
+ * @brief   LED Driver Interface Header File
+ *          Abstracts on-board BlackPill LED (PC13 active-low) and Kit LEDs
+ *          (active-high) over GPIO_Driver. Configuration comes from led_cfg.h.
+ * @date    2024
+ * @version 1.0
+ * @note    LEDs are indexed by LED_Name_t; LED_LEN is sentinel for array size.
+ *          Active state inversion handled in TurnON/OFF via LedPinVAl lookup.
+ ******************************************************************************/
 #ifndef LED_H_
 #define LED_H_
 
 #include "./LIB/stdtypes.h" 
 #include "led_cfg.h"
 
-/*
- * Enumeration of possible return status codes for LED driver functions
- * Values are aligned with GPIO driver error codes for compatibility
- * Used to indicate success, failure, or specific error conditions
- */
+/******************************************************************************
+ * @brief LED Status Enumeration
+ * @details Mirrors GPIO error codes for direct casting. Values 2/4/5/6 align
+ *          with GPIO_NULL_PTR/WRONG_PORT/PIN/OUTPUT_TYPE.
+ * @author Eng.Gemy
+ ******************************************************************************/
 typedef enum{
-    LED_OK = 0,                         /* Operation completed successfully */
-    LED_NOT_OK,                         /* General error or operation failed */
-    LED_NULL_PTR = 2,                   /* Null pointer passed as parameter (maps to GPIO_NULL_PTR) */
-    LED_WRONG_PORT = 4,                 /* Invalid port identifier provided (maps to GPIO_WRONG_PORT) */
-    LED_WRONG_PIN = 5,                  /* Invalid pin identifier provided (maps to GPIO_WRONG_PIN) */
-    LED_WRONG_OUTPUT_TYPE = 6,          /* Invalid output type configuration (maps to GPIO_WRONG_OUTPUT_TYPE) */
-    LED_WRONG_LED_NAME                  /* Invalid LED name/identifier provided */
+    LED_OK = 0,                         /**< Operation completed successfully */
+    LED_NOT_OK,                         /**< General error or operation failed */
+    LED_NULL_PTR = 2,                   /**< Null pointer (maps to GPIO_NULL_PTR) */
+    LED_WRONG_PORT = 4,                 /**< Invalid port (maps to GPIO_WRONG_PORT) */
+    LED_WRONG_PIN = 5,                  /**< Invalid pin (maps to GPIO_WRONG_PIN) */
+    LED_WRONG_OUTPUT_TYPE = 6,          /**< Invalid output type (maps to GPIO_WRONG_OUTPUT_TYPE) */
+    LED_WRONG_LED_NAME                  /**< Invalid LED name/identifier provided */
 }LED_Status_t;
 
 
-/*
- * Enumeration of available GPIO ports for LED connection
- * Represents the physical GPIO port where an LED can be connected
- * Corresponds to STM32 GPIO port naming convention
- */
+/******************************************************************************
+ * @brief GPIO Port Enumeration for LED
+ * @details Physical GPIO port where LED anode/cathode is tied.
+ *          Mirrors STM32 port naming (A/B/C/D/E/H).
+ ******************************************************************************/
 typedef enum{
-    PORT_A,     /* GPIO Port A */
-    PORT_B,     /* GPIO Port B */
-    PORT_C,     /* GPIO Port C */
-    PORT_D,     /* GPIO Port D */
-    PORT_E,     /* GPIO Port E */
-    PORT_H      /* GPIO Port H */
+    PORT_A,     /**< GPIO Port A */
+    PORT_B,     /**< GPIO Port B */
+    PORT_C,     /**< GPIO Port C */
+    PORT_D,     /**< GPIO Port D */
+    PORT_E,     /**< GPIO Port E */
+    PORT_H      /**< GPIO Port H */
 }LED_Port_t;
 
-/*
- * Enumeration of available GPIO pins within a port
- * Represents the specific pin number (0-15) where an LED can be connected
- * Each GPIO port has 16 pins available
- */
+/******************************************************************************
+ * @brief GPIO Pin Enumeration for LED
+ * @details Pin 0..15 within selected port. Each port has 16 pins.
+ ******************************************************************************/
 typedef enum{
-    PIN_0,      /* Pin 0 of the selected port */
-    PIN_1,      /* Pin 1 of the selected port */
-    PIN_2,      /* Pin 2 of the selected port */
-    PIN_3,      /* Pin 3 of the selected port */
-    PIN_4,      /* Pin 4 of the selected port */
-    PIN_5,      /* Pin 5 of the selected port */
-    PIN_6,      /* Pin 6 of the selected port */
-    PIN_7,      /* Pin 7 of the selected port */
-    PIN_8,      /* Pin 8 of the selected port */
-    PIN_9,      /* Pin 9 of the selected port */
-    PIN_10,     /* Pin 10 of the selected port */
-    PIN_11,     /* Pin 11 of the selected port */
-    PIN_12,     /* Pin 12 of the selected port */
-    PIN_13,     /* Pin 13 of the selected port */
-    PIN_14,     /* Pin 14 of the selected port */
-    PIN_15      /* Pin 15 of the selected port */
+    PIN_0,      /**< Pin 0 */
+    PIN_1,      /**< Pin 1 */
+    PIN_2,      /**< Pin 2 */
+    PIN_3,      /**< Pin 3 */
+    PIN_4,      /**< Pin 4 */
+    PIN_5,      /**< Pin 5 */
+    PIN_6,      /**< Pin 6 */
+    PIN_7,      /**< Pin 7 */
+    PIN_8,      /**< Pin 8 */
+    PIN_9,      /**< Pin 9 */
+    PIN_10,     /**< Pin 10 */
+    PIN_11,     /**< Pin 11 */
+    PIN_12,     /**< Pin 12 */
+    PIN_13,     /**< Pin 13 */
+    PIN_14,     /**< Pin 14 */
+    PIN_15      /**< Pin 15 */
 }LED_Pin_t;
 
-/*
- * Enumeration of LED active states
- * Defines the logic level required to turn the LED ON
- * Depends on LED circuit configuration (common cathode vs common anode)
- */
+/******************************************************************************
+ * @brief LED Active State Enumeration
+ * @details Logic level that illuminates the LED. Depends on wiring:
+ *          ACTIVE_LOW = common-anode (LOW → ON), HIGH = common-cathode.
+ ******************************************************************************/
 typedef enum{
-    LED_ACTIVE_LOW,     /* LED turns ON when pin is LOW (0V) - common anode configuration */
-    LED_ACTIVE_HIGH,    /* LED turns ON when pin is HIGH (3.3V/5V) - common cathode configuration */
+    LED_ACTIVE_LOW,     /**< ON at LOW (0V) — common anode (e.g., BlackPill PC13) */
+    LED_ACTIVE_HIGH,    /**< ON at HIGH (3.3V) — common cathode (Kit LEDs) */
 }LED_ActiveState_t;
 
-/*
- * Enumeration of GPIO output types for LED control
- * Determines the electrical characteristics of the output pin
- */
+/******************************************************************************
+ * @brief GPIO Output Type Enumeration for LED
+ * @details Push-pull drives both levels; open-drain needs external pull-up.
+ ******************************************************************************/
 typedef enum{
-    LED_OUTPUT_TYPE_PUSH_PULL = 0,  /* Push-pull output - can actively drive both HIGH and LOW */
-    LED_OUTPUT_TYPE_OPEN_DRAIN      /* Open-drain output - can only pull LOW, needs external pull-up for HIGH */
+    LED_OUTPUT_TYPE_PUSH_PULL = 0,  /**< Push-pull — strong high & low */
+    LED_OUTPUT_TYPE_OPEN_DRAIN      /**< Open-drain — requires pull-up for high */
 }LED_OutputType_t;
 
-/*
- * Structure containing complete configuration for a single LED
- * Defines all parameters needed to control an LED through GPIO
- */
+/******************************************************************************
+ * @brief LED Configuration Structure
+ * @details One entry per physical LED in led_cfg.c (LedConfigArr[LED_LEN]).
+ ******************************************************************************/
 typedef struct {
-    LED_Port_t port;                    /* GPIO port where LED is connected (e.g., PORT_A) */
-    LED_Pin_t  pin;                     /* GPIO pin number where LED is connected (e.g., PIN_5) */
-    LED_ActiveState_t activeState;      /* Logic level that turns LED ON (active high/low) */
-    LED_OutputType_t  outputType;       /* GPIO output type (push-pull or open-drain) */
+    LED_Port_t port;                    /**< GPIO port (e.g., PORT_C) */
+    LED_Pin_t  pin;                     /**< GPIO pin (e.g., PIN_13) */
+    LED_ActiveState_t activeState;      /**< Level that turns LED ON */
+    LED_OutputType_t  outputType;       /**< Push-pull / open-drain */
 }LED_cfg_t;
 
 
 
-/*
- * Function: LED_vdInit
- * Description: Initializes all configured LEDs by setting up their GPIO pins
- *              Reads LED configurations from led_cfg.c and configures each LED's
- *              GPIO port, pin, mode, and output type
- * Parameters: None (uses configuration from led_cfg.c)
- * Returns: LED_Status_t indicating success or specific error condition
- * Note: This function must be called before using any other LED functions
- *       All LEDs are initialized to OFF state
- */
+/******************************************************************************
+ * @brief Initialize all configured LEDs
+ * @details Reads LedConfigArr, configures each GPIO as OUTPUT (push-pull/
+ *          open-drain, no pull, default speed) via GPIO_enuInit. Leaves LEDs
+ *          in hardware reset (OFF until TurnON).
+ * @param None (uses led_cfg.c table)
+ * @return LED_Status_t LED_OK if all succeed, else first GPIO error mapped.
+ * @note  Must be called once after MCU/RCC init before any other LED API.
+ * @author Eng.Gemy
+ ******************************************************************************/
 LED_Status_t LED_vdInit();
 
-/*
- * Function: LED_vdTurnON
- * Description: Turns ON the specified LED by setting its GPIO pin to the active state
- *              Automatically handles active-high and active-low LED configurations
- * Parameters:
- *   - LED_Name_t: LED identifier from led_cfg.h (e.g., LED_RED, LED_GREEN)
- * Returns: LED_Status_t indicating success or error (e.g., invalid LED name)
- * Note: LED must be initialized with LED_vdInit() before calling this function
- */
+/******************************************************************************
+ * @brief Turn ON the specified LED
+ * @details Sets GPIO to active level: if ACTIVE_HIGH → GPIO_HIGH else LOW.
+ *          Uses LedPinVAl[!(HIGH ^ activeState)].
+ * @param[in] ledName LED identifier from led_cfg.h (BLACK_PILL_LED, KIT_LED_1_LED…)
+ * @return LED_Status_t LED_OK on success, LED_WRONG_LED_NAME if out of range
+ * @author Eng.Gemy
+ ******************************************************************************/
 LED_Status_t LED_vdTurnON(LED_Name_t);
 
-/*
- * Function: LED_vdTurnOFF
- * Description: Turns OFF the specified LED by setting its GPIO pin to the inactive state
- *              Automatically handles active-high and active-low LED configurations
- * Parameters:
- *   - LED_Name_t: LED identifier from led_cfg.h (e.g., LED_RED, LED_GREEN)
- * Returns: LED_Status_t indicating success or error (e.g., invalid LED name)
- * Note: LED must be initialized with LED_vdInit() before calling this function
- */
+/******************************************************************************
+ * @brief Turn OFF the specified LED
+ * @details Sets GPIO to inactive level (!(LOW ^ activeState)).
+ * @param[in] ledName LED identifier
+ * @return LED_Status_t LED_OK / LED_WRONG_LED_NAME
+ * @author Eng.Gemy
+ ******************************************************************************/
 LED_Status_t LED_vdTurnOFF(LED_Name_t);
 
-/*
- * Function: LED_vdToggle
- * Description: Toggles the state of the specified LED (ON→OFF or OFF→ON)
- *              Reads current pin state and inverts it
- * Parameters:
- *   - LED_Name_t: LED identifier from led_cfg.h (e.g., LED_RED, LED_GREEN)
- * Returns: LED_Status_t indicating success or error (e.g., invalid LED name)
- * Note: LED must be initialized with LED_vdInit() before calling this function
- *       Useful for blinking effects or state indication
- */
+/******************************************************************************
+ * @brief Toggle the specified LED (ON→OFF, OFF→ON)
+ * @details Reads ODR via GPIO_enuFlipPinVal (XOR). Physical toggle regardless
+ *          of activeState.
+ * @param[in] ledName LED identifier
+ * @return LED_Status_t LED_OK / LED_WRONG_LED_NAME
+ * @note  Useful for blink; keep period > a few ms for visibility.
+ * @author Eng.Gemy
+ ******************************************************************************/
 LED_Status_t LED_vdToggle(LED_Name_t);
 
 

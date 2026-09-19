@@ -1,4 +1,16 @@
-
+/******************************************************************************
+ * @file    hserial.c
+ * @author  Eng.Gemy
+ * @brief   HSERIAL Driver Implementation — Unified UART/SPI Mux
+ *          Implements HSERIAL_enuInit (per-channel UART/SPI/DMA/NVIC setup),
+ *          Transmit/Receive dispatchers, and internal helpers for sync/async/
+ *          DMA TX/RX (SPI bit helpers, local Tx/Rx callbacks chaining via
+ *          SPI callbacks). DMA maps for UART1/2/6 TX/RX are static tables.
+ * @date    2024
+ * @version 1.0
+ * @note    BOOTLOADER_HSERIAL_CHANNEL is the sole channel defined in
+ *          hserial_cfg.h (length=1). SPI async uses circular HSerialSpiBuffers.
+ ******************************************************************************/
 
 #include "LIB/stdtypes.h"
 #include "MCAL/UART_Driver/uart.h"
@@ -136,6 +148,15 @@ static HSERIAL_Callback_t LocalSpiCallbacks[4][2] = {
 };
 
 
+/******************************************************************************
+ * @brief Initialize all HSERIAL channels per HSERIAL_Configurations table
+ * @details For each channel 0..LENGTH-1, switches on HSERIAL_Mode → calls
+ *          HSERIAL_enu*InitUart/Spi which inits UART/SPI, DMA streams, and NVIC
+ *          IRQs with priorities. Returns status of last channel (last error
+ *          wins; earlier errors overwritten — caller should check per-channel).
+ * @param None (uses hserial_cfg.c)
+ * @return HSERIAL_Status_t HSERIAL_OK or first ERROR_* (UART/DMA/SPI/NVIC)
+ ******************************************************************************/
 HSERIAL_Status_t HSERIAL_enuInit(void){
     HSERIAL_Status_t status = HSERIAL_NOT_OK;
 
@@ -169,6 +190,18 @@ HSERIAL_Status_t HSERIAL_enuInit(void){
 }
 
 
+/******************************************************************************
+ * @brief Unified transmit dispatcher — validates and routes by channel Mode
+ * @details Checks channel bounds, NULL buffer, size>0, then switches on
+ *          HSERIAL_Configurations[channel].HSERIAL_Mode to call appropriate
+ *          UART/SPI sync/async/DMA helper. Sync blocks; async/DMA callbacks
+ *          will fire on completion.
+ * @param[in] channel Channel index (HSERIAL_Channel_t)
+ * @param[in] dataBuffer Source bytes (must remain valid for async/DMA)
+ * @param[in] size Bytes to send (>0)
+ * @return HSERIAL_Status_t HSERIAL_OK, WRONG_CHANNEL, NULL_POINTER, INVALID_SIZE,
+ *         FAILED_TRANSMIT if underlying UART/SPI/DMA api fails
+ ******************************************************************************/
 HSERIAL_Status_t HSERIAL_enuTransmitBuffer(HSERIAL_Channel_t channel, const uint8_t* dataBuffer, uint16_t size){
     HSERIAL_Status_t retStatus = HSERIAL_NOT_OK;
 
@@ -205,6 +238,16 @@ HSERIAL_Status_t HSERIAL_enuTransmitBuffer(HSERIAL_Channel_t channel, const uint
     return retStatus;
 }
 
+/******************************************************************************
+ * @brief Unified receive dispatcher — validates and routes by channel Mode
+ * @details Validates channel/buffer/size, switches on Mode → calls UART/SPI
+ *          sync/async/DMA receive helpers. HSERIAL_ENABLE_* gating inside
+ *          helps choose TX vs RX path for DMA modes.
+ * @param[in] channel Channel index
+ * @param[out] dataBuffer Destination buffer (must remain valid for async/DMA)
+ * @param[in] size Bytes to receive (>0)
+ * @return HSERIAL_Status_t HSERIAL_OK or error code
+ ******************************************************************************/
 HSERIAL_Status_t HSERIAL_enuReceiveBuffer(HSERIAL_Channel_t channel,uint8_t* dataBuffer, uint16_t size){
     HSERIAL_Status_t retStatus = HSERIAL_NOT_OK;
 
