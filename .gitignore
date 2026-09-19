@@ -9,3 +9,14 @@ lib
 ARM_Drivers.code-workspace
 platformmio.ini
 platformio.ini
+# Build artifacts - do not push binaries
+firmware.elf
+firmware.bin
+firmware.hex
+app.bin
+output.hex
+*.bin
+*.hex
+*.elf
+test/
+.qodo/
