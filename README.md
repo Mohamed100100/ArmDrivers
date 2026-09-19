@@ -1,4 +1,4 @@
-# ArmDrivers — STM32F401CC Bare-Metal Drivers (HAL / MCAL / OS / LIB)
+# ITI-ARM_Drivers-Playground — STM32F401CC Bare-Metal Drivers (HAL / MCAL / OS / LIB)
 
 > **ECU firmware layer for STM32F401CC (Cortex-M4, 84 MHz, 256 KB Flash, 64 KB SRAM)** — BlackPill + Kit shield. Built with **PlatformIO + CMSIS + Custom Linker Script**. Authored by **Eng.Gemy / Bootloader Team / ITI Intake46**.
 
@@ -65,7 +65,7 @@ ArmDrivers is a **from-scratch bare-metal driver stack** for **STM32F401CC** —
 ## 3. Repository Structure
 
 ```
-ArmDrivers/
+ITI-ARM_Drivers-Playground/
 ├── platformio.ini                 # env:genericSTM32F401CC, ststm32, cmsis, stlink, CustomLinkerScript.ld
 ├── LinkerScript/
 │   └── CustomLinkerScript.ld      # RAM 64K @0x20000000, FLASH 256K @0x08000000 + LED_CFG sections
