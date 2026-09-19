@@ -1,8 +1,21 @@
-
+/******************************************************************************
+ * @file    dma.c
+ * @author  Eng.Gemy
+ * @brief   DMA Driver Implementation File (DMA1/DMA2, 8 streams each)
+ *          Implements Init (SCR/NDTR/PAR/M0AR/FCR), start/stop, address/NDTR
+ *          update, callback registration, flag read/clear, and local handler
+ *          DMA_Local_Handler that checks LISR/HISR flags and invokes callbacks.
+ *          Provides 16 weak ISRs DMAx_Streamy_IRQHandler.
+ * @date    2024
+ * @version 1.0
+ * @note    Flags offsets: streams 0/4→0,1/5→6,2/6→16,3/7→22; positions FE=0,
+ *          DME=2,TE=3,HT=4,TC=5. Stream must be EN=0 before Init re-config.
+ ******************************************************************************/
 
 #include "MCAL/DMA_Driver/dma_priv.h"
 #include "MCAL/DMA_Driver/dma.h"
 
+/** @brief Local IRQ dispatcher — checks flags and calls dmaCallbacks */
 static void DMA_Local_Handler(DMA_Controller_t dmaController, DMA_Stream_t stream);
 
 static DMA_Register_t* dmaRegisters[] = {
@@ -27,6 +40,15 @@ const uint8_t flagsPositions[] = {
 
 static DMA_CallBack_t dmaCallbacks[2][8][5] = { { {0} } };
 
+/******************************************************************************
+ * @brief Initialize DMA stream per config — validate, disable, program regs
+ * @details Validates all bit masks (Channel/MBurst/PBurst/DBM/Priority/MSize/
+ *          PSize/MINC/PINC/CIRC/DIR/PFCTRL/DMDIS/FTH/Interrupts) and NDTR>0.
+ *          Disables stream (SCR.EN=0), ORs fields into SCR, sets NDTR/PAR/M0AR
+ *          (+M1AR if DBM), and DMDIS/FTH/FEIE into FCR.
+ * @param[in] ConfigPtr Pointer to DMA_Config_t
+ * @return DMA_Status_t DMA_OK or WRONG_* / NULL_PTR / ZERO_NUMBER_OF_DATA
+ ******************************************************************************/
 DMA_Status_t DMA_enuInit(const DMA_Config_t* ConfigPtr){
     DMA_Status_t retStatus = DMA_NOT_OK;
     if(NULL == ConfigPtr){

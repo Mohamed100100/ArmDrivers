@@ -1,28 +1,41 @@
+/******************************************************************************
+ * @file    systick.c
+ * @author  Eng.Gemy
+ * @brief   SysTick Timer Driver Implementation File
+ *          Implements 24-bit SysTick at 0xE000E010 (STK_CTRL/LOAD/VAL).
+ *          Provides Init, callback, reload, start/stop, blocking Wait_ms,
+ *          and ISR that drives systick_counter + user callback.
+ * @date    2024
+ * @version 1.0
+ * @note    Registers defined in systick_priv.h (SYSTICK_Registers->STK_*).
+ *          systick_counter is volatile flag for Wait_ms polling.
+ ******************************************************************************/
+
 #include "LIB/stdtypes.h"
 
 #include "MCAL/SYSTICK_TIMER_Driver/systick_priv.h"
 #include "MCAL/SYSTICK_TIMER_Driver/systick.h"
 
-/* Forward declaration of the SysTick interrupt handler */
+/** @brief Forward declaration of ISR (hardware vector) */
 void SysTick_Handler(void);
 
-/* Static variable to count the number of SysTick interrupts that have occurred */
+/** @brief Counts SysTick interrupts since last Wait_ms reset */
 static uint32_t systick_counter  = 0;
 
-/* Static pointer to store the user-defined callback function */
+/** @brief User callback invoked from ISR (NULL if none) */
 static SYSTICK_Callback_t callback = NULL;
 
-/* Static variable to store the system clock frequency value in Hz */
+/** @brief Saved system clock in Hz for delay math (from SYSTICK_Init) */
 static uint32_t clockSourceValue=0;
 
-/*
- * Function: SYSTICK_Init
- * Description: Initializes the SysTick timer with the specified clock frequency and prescaler
- * Parameters:
- *   - ClockValue: System clock frequency in Hz
- *   - prescaller: Clock source selection (processor clock or AHB/8)
- * Returns: Status code indicating success or specific error condition
- */
+/******************************************************************************
+ * @brief Initialize SysTick with clock and prescaler
+ * @details Validates prescaler (NO_PRESCALLER/8), ORs into STK_CTRL.CLKSOURCE,
+ *          enables TICKINT, saves ClockValue. Leaves ENABLE clear.
+ * @param[in] ClockValue System clock Hz
+ * @param[in] prescaller SYSTICK_NO_PRESCALLER or SYSTICK_PRESCALLER_8
+ * @return SYSTICK_Status_t SYSTICK_OK or SYSTICK_WRONG_PRESCALLER
+ ******************************************************************************/
 SYSTICK_Status_t SYSTICK_Init(uint32_t ClockValue,SYSTICK_Prescaller_t prescaller){
     SYSTICK_Status_t status = SYSTICK_NOT_OK;
 
@@ -45,26 +58,27 @@ SYSTICK_Status_t SYSTICK_Init(uint32_t ClockValue,SYSTICK_Prescaller_t prescalle
     return status;
 }
 
-/*
- * Function: SYSTICK_SetCallBack
- * Description: Registers a user-defined callback function to be executed on SysTick interrupt
- * Parameters:
- *   - copyCallback: Function pointer to the callback function
- * Returns: SYSTICK_OK status (always succeeds)
- */
+/******************************************************************************
+ * @brief Register user callback for SysTick ISR
+ * @details Stores copyCallback into static callback; SysTick_Handler will
+ *          invoke it after incrementing systick_counter. Allows NULL to clear.
+ * @param[in] copyCallback Function pointer (or NULL to unregister)
+ * @return SYSTICK_Status_t SYSTICK_OK (always succeeds per current impl)
+ * @note  Keep ISR short; do not block.
+ ******************************************************************************/
 SYSTICK_Status_t SYSTICK_SetCallBack(SYSTICK_Callback_t copyCallback){
     /* Store the callback function pointer for later invocation in ISR */
     callback = copyCallback;
     return SYSTICK_OK;
 }
 
-/*
- * Function: SYSTICK_SetStartValue
- * Description: Sets the reload value for the SysTick timer counter
- * Parameters:
- *   - startValue: 24-bit reload value (0x000000 to 0xFFFFFF)
- * Returns: Status code indicating success or if value exceeds 24-bit limit
- */
+/******************************************************************************
+ * @brief Set SysTick reload value (period)
+ * @details Checks upper 8 bits via SYSTICK_STARTVALUE_MASK → WRONG_STARTVALUE
+ *          else writes STK_LOAD.
+ * @param[in] startValue 24-bit reload (0..0xFFFFFF)
+ * @return SYSTICK_Status_t SYSTICK_OK or SYSTICK_WRONG_STARTVALUE
+ ******************************************************************************/
 SYSTICK_Status_t SYSTICK_SetStartValue(uint32_t startValue){
     SYSTICK_Status_t status = SYSTICK_NOT_OK;
 
@@ -79,35 +93,39 @@ SYSTICK_Status_t SYSTICK_SetStartValue(uint32_t startValue){
     return status;
 }
 
-/*
- * Function: SYSTICK_StartCount
- * Description: Starts the SysTick counter by enabling the timer
- * Parameters: None
- * Returns: None
- */
+/******************************************************************************
+ * @brief Start SysTick counting
+ * @details Sets STK_CTRL.ENABLE (bit0)=1.
+ * @param None
+ * @return None
+ ******************************************************************************/
 void SYSTICK_StartCount(){
     /* Set the ENABLE bit (bit 0) in the control register to start counting */
     SYSTICK_Registers->STK_CTRL |=SYSTICK_START_COUNTING;
 }
 
-/*
- * Function: SYSTICK_StopCount
- * Description: Stops the SysTick counter by disabling the timer
- * Parameters: None
- * Returns: None
- */
+/******************************************************************************
+ * @brief Stop SysTick counting
+ * @details Clears STK_CTRL.ENABLE (bit0)=0.
+ * @param None
+ * @return None
+ ******************************************************************************/
 void SYSTICK_StopCount(){
     /* Clear the ENABLE bit (bit 0) in the control register to stop counting */
     SYSTICK_Registers->STK_CTRL &=SYSTICK_STOP_COUNTING;
 }
 
-/*
- * Function: SYSTICK_Wait_ms
- * Description: Blocking delay function that waits for specified milliseconds using SysTick
- * Parameters:
- *   - delay_ms: Delay time in milliseconds
- * Returns: Status code indicating success or specific error (timer off, no start value, etc.)
- */
+/******************************************************************************
+ * @brief Blocking delay in milliseconds using SysTick interrupts
+ * @details Validates ENABLE, LOAD!=0, TICKINT. Derives clockSource (÷8 if
+ *          prescaler bit clear), computes reloadValue=LOAD+1, ticksPerMs=
+ *          clockSource/1000, requiredTicks=(delay_ms*ticksPerMs)/reloadValue.
+ *          Resets systick_counter and busy-waits until requiredTicks reached.
+ * @param[in] delay_ms Milliseconds to block (1.. large; upper bound by 24-bit)
+ * @return SYSTICK_Status_t SYSTICK_OK, SYSTICK_OFF, SYSTICK_ZERO_STARTVALUE,
+ *         SYSTICK_EXCEPTION_OFF
+ * @note  Blocking — stalls scheduler. Use scheduler delay instead when OS runs.
+ ******************************************************************************/
 SYSTICK_Status_t SYSTICK_Wait_ms(uint32_t delay_ms){
     
     SYSTICK_Status_t status = SYSTICK_NOT_OK;
@@ -166,13 +184,12 @@ SYSTICK_Status_t SYSTICK_Wait_ms(uint32_t delay_ms){
     return status;
 }
 
-/*
- * Function: SYSTICK_GetCurrentCount
- * Description: Reads the current value of the SysTick counter
- * Parameters:
- *   - currentCount: Pointer to store the current counter value
- * Returns: Status code indicating success or NULL pointer error
- */
+/******************************************************************************
+ * @brief Get current SysTick counter (VAL)
+ * @details Reads STK_VAL (24-bit). Validates pointer.
+ * @param[out] currentCount Pointer to store VAL
+ * @return SYSTICK_Status_t SYSTICK_OK or SYSTICK_NULL_PTR
+ ******************************************************************************/
 SYSTICK_Status_t SYSTICK_GetCurrentCount(uint32_t *currentCount){
     SYSTICK_Status_t status = SYSTICK_NOT_OK;
 
@@ -187,14 +204,13 @@ SYSTICK_Status_t SYSTICK_GetCurrentCount(uint32_t *currentCount){
     return status;
 }
 
-/*
- * Function: SYSTICK_GetCounterFlag
- * Description: Reads the COUNTFLAG bit which indicates if timer counted to 0 since last read
- * Parameters:
- *   - CounterFlag: Pointer to store the flag value (0 or 1)
- * Returns: Status code indicating success or NULL pointer error
- * Note: Reading this flag automatically clears it
- */
+/******************************************************************************
+ * @brief Get COUNTFLAG (bit16) — did timer hit 0 since last read?
+ * @details Extracts STK_CTRL.COUNTFLAG (reading clears it per HW).
+ * @param[out] CounterFlag Pointer to uint8_t for 0/1
+ * @return SYSTICK_Status_t SYSTICK_OK or SYSTICK_NULL_PTR
+ * @note  Helper not in public header in some forks — kept for debug.
+ ******************************************************************************/
 SYSTICK_Status_t SYSTICK_GetCounterFlag(uint8_t *CounterFlag){
     SYSTICK_Status_t status = SYSTICK_NOT_OK;
 
@@ -209,14 +225,14 @@ SYSTICK_Status_t SYSTICK_GetCounterFlag(uint8_t *CounterFlag){
     return status;
 }
 
-/*
- * Function: SysTick_Handler
- * Description: SysTick interrupt service routine (ISR)
- *              Automatically called by hardware when SysTick counter reaches zero
- * Parameters: None
- * Returns: None
- * Note: This is the actual interrupt handler that executes on every SysTick exception
- */
+/******************************************************************************
+ * @brief SysTick ISR — hardware vector 0x3B
+ * @details Increments systick_counter (for Wait_ms) and invokes user callback
+ *          if registered. Executes in interrupt context — keep short.
+ * @param None
+ * @return None
+ * @note  Registered via SYSTICK_SetCallBack; scheduler uses this for tick.
+ ******************************************************************************/
 void SysTick_Handler(void){
     /* Increment the interrupt counter used by SYSTICK_Wait_ms */
     systick_counter++;

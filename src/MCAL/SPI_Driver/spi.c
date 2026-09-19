@@ -1,4 +1,17 @@
-
+/******************************************************************************
+ * @file    spi.c
+ * @author  Eng.Gemy
+ * @brief   SPI Driver Implementation File (STM32F401 SPI1-4)
+ *          Implements Init (GPIO AF + CR1/CR2 config), sync blocking
+ *          transmit/receive (poll TXE/RXNE/BUSY), async TXE/RXNE interrupt
+ *          with callbacks, CS select/deselect via GPIO, and per-flag
+ *          enable/clear/read helpers. ISRs SPIx_IRQHandler dispatch to
+ *          SPI_Private_IRQHandler.
+ * @date    2024
+ * @version 1.0
+ * @note    NSS SW mode requires CS via slavesConfig[]. SPI_Tx_Callbacks
+ *          is [instance][flag] table; NUMBER_OF_FLAGS=9 (see mapping comment).
+ ******************************************************************************/
 
 #include "LIB/stdtypes.h"
 #include "MCAL/GPIO_Driver/gpio_int.h"
@@ -6,6 +19,11 @@
 #include "MCAL/SPI_Driver/spi_priv.h"
 #include "MCAL/SPI_Driver/spi.h"
 
+/******************************************************************************
+ * @brief Callback table: [spiNumber][flag] → ISR will invoke on matching flag
+ * @details Indices: 0 RXNE, 1 TXE, 2 unused, 3 UNDERRUN, 4 OVERRUN, 5 CRC,
+ *          6 MODE_FAULT, 7 BUSY, etc. Initial NULL.
+ ******************************************************************************/
 // for each spi number , for each flag , store its callback
 // 0 > RXNE_COMPLETED
 // 1 > TXE_COMPLETED
@@ -48,6 +66,15 @@ static uint16_t *SPIReceivedData[SPI_NUMBER] = {NULL,NULL,NULL,NULL};
 
 static SPI_Status_t Init_SPI_Pins(SPI_Config_t* config);
 
+/******************************************************************************
+ * @brief Initialize SPI instance per SpiConfig
+ * @details Validates spiNumber/masks for comm/mode/crc/length/order/baud/
+ *          polarity/frame/dma/nss, calls Init_SPI_Pins (AF + slave CS GPIOs),
+ *          disables SPE, ORs CR1/CR2 fields (comm/mode/crc/length/order/baud/
+ *          polarity/frame/dma/nss), sets CRCPR, enables SPE, updates MaskData.
+ * @param[in] SpiConfig Pointer to SPI_Config_t (must not be NULL)
+ * @return SPI_Status_t SPI_OK, WRONG_* , NULL_POINTER, GPIO_NOT_INITIALIZED
+ ******************************************************************************/
 SPI_Status_t SPI_enuInit(SPI_Config_t* SpiConfig){
     SPI_Status_t retStatus = SPI_NOT_OK;
 
@@ -119,6 +146,15 @@ SPI_Status_t SPI_enuInit(SPI_Config_t* SpiConfig){
 }
 
 
+/******************************************************************************
+ * @brief Master sync transmit-and-receive (blocking, full-duplex)
+ * @details Polls TXE → writes DR → polls RXNE → reads DR (8/16-bit masked) →
+ *          waits BUSY=0. For 8-bit only low byte of TxData/RxData is used.
+ * @param[in] spiNumber Instance (SPI1..4)
+ * @param[in] TxData Word to transmit
+ * @param[out] RxData Pointer to receive word (must not be NULL)
+ * @return SPI_Status_t SPI_OK, NULL_POINTER, WRONG_SPI_NUMBER
+ ******************************************************************************/
 SPI_Status_t SPI_enuMasterSyncTransmitReceive(SPI_Number_t spiNumber, uint16_t TxData, uint16_t* RxData){
     SPI_Status_t retStatus = SPI_NOT_OK;
 
@@ -503,6 +539,15 @@ SPI_Status_t SPI_enuRegisterCallback(SPI_Number_t spiNumber, SPI_Flag_t flag, SP
 
 
 
+/******************************************************************************
+ * @brief Init GPIO AF pins for SPI SCK/MISO/MOSI/NSS per mode/comm/nss
+ * @details Selects altFunction (AF5 for SPI1/2/4, AF6 for SPI3), marks which
+ *          pins are used based on master/slave + communication mode + NSS type
+ *          (HW vs SW), then inits each used pin via GPIO_enuInit (AF, PUSH_PULL,
+ *          VERY_HIGH, NO_PULL). Also inits slave CS outputs for MASTER_SW.
+ * @param[in] config SPI config to derive pins from
+ * @return SPI_Status_t SPI_OK or WRONG_* / NULL_POINTER / GPIO_NOT_INITIALIZED
+ ******************************************************************************/
 static SPI_Status_t Init_SPI_Pins(SPI_Config_t* config) {
     SPI_Status_t status = SPI_NOT_OK;
     SPI_PinsConfig_t pinsConfig;
@@ -696,6 +741,14 @@ static SPI_Status_t Init_SPI_Pins(SPI_Config_t* config) {
 }
 
 
+/******************************************************************************
+ * @brief Common IRQ dispatcher for all SPI instances
+ * @details Checks SR flags RXNE/TXE/OVR/UDR/CRC/MODF/FRE, disables TXE/RXNE
+ *          after handling, invokes registered callbacks Tx_Callbacks[spi][flag],
+ *          clears error flags, and clears BUSY state for TXE/RXNE.
+ * @param[in] spiNumber Instance to service (SPI1..4)
+ * @return None
+ ******************************************************************************/
 static void SPI_Private_IRQHandler(SPI_Number_t spiNumber){
     if(SPI_u8ReadFlag(spiNumber,SPI_FLAG_RXNE) == 1){
         // Disable RXNE interrupt
